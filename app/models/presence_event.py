@@ -27,11 +27,22 @@ class PresenceEvent(db.Model):
 
     detected = db.Column(
         db.Boolean,
-        nullable=False
+        nullable=False,
+        default=True
     )
 
     signal_strength = db.Column(
         db.Integer,
+        nullable=True
+    )
+
+    ble_device_id = db.Column(
+        db.String(100),
+        nullable=True
+    )
+
+    event_type = db.Column(
+        db.String(30),
         nullable=True
     )
 
