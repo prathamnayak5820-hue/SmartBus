@@ -29,3 +29,11 @@ class ParentStudentLink(db.Model):
         db.DateTime,
         default=datetime.utcnow
     )
+
+    is_active = db.Column(
+        db.Boolean,
+        default=True
+    )
+
+    parent = db.relationship("User")
+    student = db.relationship("Student")

@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt, get_jwt_identity
+from flask_jwt_extended import jwt_required, get_jwt
 
 from app.extensions import db
 from app.models.user import User
@@ -17,7 +17,9 @@ def create_student():
     claims = get_jwt()
 
     if claims.get("role") not in ["ADMIN", "COLLEGE"]:
-        return jsonify({"error": "Only admin or college can create students"}), 403
+        return jsonify({
+            "error": "Only admin or college can create students"
+        }), 403
 
     data = request.get_json() or {}
 
@@ -35,25 +37,39 @@ def create_student():
     user = db.session.get(User, user_id)
 
     if not user:
-        return jsonify({"error": "User not found"}), 404
+        return jsonify({
+            "error": "User not found"
+        }), 404
 
     if user.role != "STUDENT":
-        return jsonify({"error": "User must have STUDENT role"}), 400
+        return jsonify({
+            "error": "User must have STUDENT role"
+        }), 400
 
     if Student.query.filter_by(student_code=student_code).first():
-        return jsonify({"error": "Student code already exists"}), 409
+        return jsonify({
+            "error": "Student code already exists"
+        }), 409
 
     if ble_device_id:
-        if Student.query.filter_by(ble_device_id=ble_device_id).first():
-            return jsonify({"error": "BLE device already registered"}), 409
+        if Student.query.filter_by(
+            ble_device_id=ble_device_id
+        ).first():
+            return jsonify({
+                "error": "BLE device already registered"
+            }), 409
 
     if bus_id and not db.session.get(Bus, bus_id):
-        return jsonify({"error": "Bus not found"}), 404
+        return jsonify({
+            "error": "Bus not found"
+        }), 404
 
     if boarding_point_id and not db.session.get(
         BoardingPoint, boarding_point_id
     ):
-        return jsonify({"error": "Boarding point not found"}), 404
+        return jsonify({
+            "error": "Boarding point not found"
+        }), 404
 
     student = Student(
         user_id=user_id,
@@ -107,7 +123,9 @@ def get_student(student_id):
     student = db.session.get(Student, student_id)
 
     if not student:
-        return jsonify({"error": "Student not found"}), 404
+        return jsonify({
+            "error": "Student not found"
+        }), 404
 
     user = db.session.get(User, student.user_id)
 
@@ -128,12 +146,16 @@ def assign_student(student_id):
     claims = get_jwt()
 
     if claims.get("role") not in ["ADMIN", "COLLEGE"]:
-        return jsonify({"error": "Only admin or college can assign students"}), 403
+        return jsonify({
+            "error": "Only admin or college can assign students"
+        }), 403
 
     student = db.session.get(Student, student_id)
 
     if not student:
-        return jsonify({"error": "Student not found"}), 404
+        return jsonify({
+            "error": "Student not found"
+        }), 404
 
     data = request.get_json() or {}
 
@@ -141,15 +163,21 @@ def assign_student(student_id):
         bus_id = data.get("bus_id")
 
         if bus_id and not db.session.get(Bus, bus_id):
-            return jsonify({"error": "Bus not found"}), 404
+            return jsonify({
+                "error": "Bus not found"
+            }), 404
 
         student.bus_id = bus_id
 
     if "boarding_point_id" in data:
         point_id = data.get("boarding_point_id")
 
-        if point_id and not db.session.get(BoardingPoint, point_id):
-            return jsonify({"error": "Boarding point not found"}), 404
+        if point_id and not db.session.get(
+            BoardingPoint, point_id
+        ):
+            return jsonify({
+                "error": "Boarding point not found"
+            }), 404
 
         student.boarding_point_id = point_id
 

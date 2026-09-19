@@ -1,4 +1,5 @@
 from flask import Blueprint, request, jsonify
+<<<<<<< HEAD
 from flask_jwt_extended import jwt_required, get_jwt
 
 from app.extensions import db
@@ -60,6 +61,25 @@ def create_bus():
         bus_number=bus_number,
         capacity=capacity,
         driver_id=driver_id
+=======
+from app.extensions import db
+from app.models.bus import Bus
+
+bus_bp = Blueprint(
+    "buses",
+    __name__,
+    url_prefix="/api/buses"
+)
+
+
+@bus_bp.route("", methods=["POST"])
+def create_bus():
+    data = request.get_json()
+
+    bus = Bus(
+        bus_number=data["bus_number"],
+        capacity=data["capacity"]
+>>>>>>> 2886c82 (Update SmartBus backend)
     )
 
     db.session.add(bus)
@@ -67,6 +87,7 @@ def create_bus():
 
     return jsonify({
         "message": "Bus created successfully",
+<<<<<<< HEAD
         "bus": {
             "id": bus.id,
             "bus_number": bus.bus_number,
@@ -161,3 +182,22 @@ def assign_driver(bus_id):
         "bus_id": bus.id,
         "driver_id": bus.driver_id
     }), 200
+=======
+        "bus_id": bus.id
+    }), 201
+
+
+@bus_bp.route("", methods=["GET"])
+def get_buses():
+    buses = Bus.query.all()
+
+    return jsonify([
+        {
+            "id": bus.id,
+            "bus_number": bus.bus_number,
+            "capacity": bus.capacity,
+            "is_active": bus.is_active
+        }
+        for bus in buses
+    ])
+>>>>>>> 2886c82 (Update SmartBus backend)

@@ -1,46 +1,32 @@
-import uuid
-from datetime import datetime
-
 from app.extensions import db
+from datetime import datetime
 
 
 class Trip(db.Model):
     __tablename__ = "trips"
 
-    id = db.Column(
-        db.String(36),
-        primary_key=True,
-        default=lambda: str(uuid.uuid4())
-    )
+    id = db.Column(db.String(36), primary_key=True)
 
     bus_id = db.Column(
-        db.String(36),
+        db.Integer,
         db.ForeignKey("buses.id"),
         nullable=False
     )
 
+    
     route_id = db.Column(
-        db.String(36),
-        db.ForeignKey("routes.id"),
-        nullable=False
-    )
-
-    driver_id = db.Column(
-        db.String(36),
-        db.ForeignKey("users.id"),
-        nullable=False
-    )
+    db.String(36),
+    db.ForeignKey("routes.id"),
+    nullable=False
+)
 
     status = db.Column(
-        db.String(20),
-        default="PLANNED",
-        nullable=False
+        db.String(30),
+        default="SCHEDULED"
     )
 
-    start_time = db.Column(db.DateTime, nullable=True)
-    end_time = db.Column(db.DateTime, nullable=True)
+    started_at = db.Column(db.DateTime)
+    ended_at = db.Column(db.DateTime)
 
-    created_at = db.Column(
-        db.DateTime,
-        default=datetime.utcnow
-    )
+    bus = db.relationship("Bus")
+    route = db.relationship("Route")

@@ -20,12 +20,12 @@ class GPSLocation(db.Model):
     )
 
     latitude = db.Column(
-        db.Numeric(10, 7),
+        db.Float,
         nullable=False
     )
 
     longitude = db.Column(
-        db.Numeric(10, 7),
+        db.Float,
         nullable=False
     )
 
@@ -55,3 +55,5 @@ class GPSLocation(db.Model):
         db.DateTime,
         default=datetime.utcnow
     )
+
+    trip = db.relationship("Trip")

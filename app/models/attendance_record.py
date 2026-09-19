@@ -27,7 +27,7 @@ class AttendanceRecord(db.Model):
 
     status = db.Column(
         db.String(30),
-        default="PRESENT",
+        default="UNKNOWN",
         nullable=False
     )
 
@@ -50,3 +50,12 @@ class AttendanceRecord(db.Model):
         db.DateTime,
         default=datetime.utcnow
     )
+
+    updated_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+
+    trip = db.relationship("Trip")
+    student = db.relationship("Student")

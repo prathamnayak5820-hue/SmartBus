@@ -1,49 +1,38 @@
-import uuid
-from datetime import datetime
-
 from app.extensions import db
 
 
 class Student(db.Model):
     __tablename__ = "students"
 
-    id = db.Column(
-        db.String(36),
-        primary_key=True,
-        default=lambda: str(uuid.uuid4())
-    )
+    id = db.Column(db.Integer, primary_key=True)
 
     user_id = db.Column(
-        db.String(36),
+        db.Integer,
         db.ForeignKey("users.id"),
-        nullable=False
+        nullable=True
     )
 
-    student_code = db.Column(
+    name = db.Column(db.String(100), nullable=False)
+
+    usn = db.Column(
         db.String(50),
         unique=True,
         nullable=False
     )
 
-    ble_device_id = db.Column(
-        db.String(100),
-        unique=True,
-        nullable=True
-    )
-
-    bus_id = db.Column(
-        db.String(36),
-        db.ForeignKey("buses.id"),
-        nullable=True
-    )
+    phone = db.Column(db.String(15))
 
     boarding_point_id = db.Column(
-        db.String(36),
+        db.Integer,
         db.ForeignKey("boarding_points.id"),
         nullable=True
     )
 
-    created_at = db.Column(
-        db.DateTime,
-        default=datetime.utcnow
+    is_active = db.Column(
+        db.Boolean,
+        default=True
+    )
+
+    boarding_point = db.relationship(
+        "BoardingPoint"
     )

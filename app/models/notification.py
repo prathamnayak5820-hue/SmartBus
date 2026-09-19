@@ -31,7 +31,7 @@ class Notification(db.Model):
     )
 
     title = db.Column(
-        db.String(150),
+        db.String(200),
         nullable=False
     )
 
@@ -49,3 +49,7 @@ class Notification(db.Model):
         db.DateTime,
         default=datetime.utcnow
     )
+
+    user = db.relationship("User")
+    trip = db.relationship("Trip")
+    

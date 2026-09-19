@@ -19,7 +19,13 @@ class SOSEvent(db.Model):
         nullable=False
     )
 
-    raised_by = db.Column(
+    bus_id = db.Column(
+        db.String(36),
+        db.ForeignKey("buses.id"),
+        nullable=False
+    )
+
+    driver_id = db.Column(
         db.String(36),
         db.ForeignKey("users.id"),
         nullable=False
@@ -49,3 +55,12 @@ class SOSEvent(db.Model):
         db.DateTime,
         default=datetime.utcnow
     )
+
+    resolved_at = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
+    trip = db.relationship("Trip")
+    bus = db.relationship("Bus")
+    driver = db.relationship("User")
