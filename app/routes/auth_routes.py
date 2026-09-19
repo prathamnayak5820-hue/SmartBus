@@ -4,7 +4,7 @@ from flask_jwt_extended import create_access_token
 from app.extensions import db, bcrypt
 from app.models.user import User
 
-auth_bp = Blueprint("auth", __name__)
+auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
 
 @auth_bp.post("/register")
