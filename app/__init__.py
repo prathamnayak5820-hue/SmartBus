@@ -5,14 +5,16 @@ from app.extensions import db, jwt, bcrypt, cors
 
 
 def create_app():
+
     app = Flask(__name__)
+
     app.config.from_object(Config)
 
     # Initialize extensions
     db.init_app(app)
     jwt.init_app(app)
     bcrypt.init_app(app)
-    cors(app)
+    cors.init_app(app)
 
     # Import models so SQLAlchemy knows all tables
     from app.models import (

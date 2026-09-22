@@ -7,6 +7,14 @@ from app.extensions import db
 class ParentStudentLink(db.Model):
     __tablename__ = "parent_student_links"
 
+    __table_args__ = (
+        db.UniqueConstraint(
+            "parent_id",
+            "student_id",
+            name="uq_parent_student"
+        ),
+    )
+
     id = db.Column(
         db.String(36),
         primary_key=True,
@@ -20,19 +28,21 @@ class ParentStudentLink(db.Model):
     )
 
     student_id = db.Column(
-        db.String(36),
+        db.Integer,
         db.ForeignKey("students.id"),
         nullable=False
     )
 
     created_at = db.Column(
         db.DateTime,
-        default=datetime.utcnow
+        default=datetime.utcnow,
+        nullable=False
     )
 
     is_active = db.Column(
         db.Boolean,
-        default=True
+        default=True,
+        nullable=False
     )
 
     parent = db.relationship("User")

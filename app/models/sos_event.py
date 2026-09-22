@@ -31,36 +31,21 @@ class SOSEvent(db.Model):
         nullable=False
     )
 
-    latitude = db.Column(
-        db.Numeric(10, 7),
-        nullable=True
-    )
+    latitude = db.Column(db.Float, nullable=False)
+    longitude = db.Column(db.Float, nullable=False)
 
-    longitude = db.Column(
-        db.Numeric(10, 7),
-        nullable=True
-    )
-
-    message = db.Column(
-        db.Text,
-        nullable=True
-    )
+    message = db.Column(db.Text)
 
     status = db.Column(
-        db.String(30),
+        db.String(20),
+        nullable=False,
         default="ACTIVE"
     )
 
     created_at = db.Column(
         db.DateTime,
+        nullable=False,
         default=datetime.utcnow
     )
 
-    resolved_at = db.Column(
-        db.DateTime,
-        nullable=True
-    )
-
-    trip = db.relationship("Trip")
-    bus = db.relationship("Bus")
-    driver = db.relationship("User")
+    resolved_at = db.Column(db.DateTime, nullable=True)
