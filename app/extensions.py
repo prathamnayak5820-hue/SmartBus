@@ -8,4 +8,4 @@ db = SQLAlchemy()
 migrate = Migrate()
 jwt = JWTManager()
 bcrypt = Bcrypt()
-cors = CORS
+cors = CORS()

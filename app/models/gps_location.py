@@ -13,6 +13,14 @@ class GPSLocation(db.Model):
         default=lambda: str(uuid.uuid4())
     )
 
+    # Unique ID of the original GPS event.
+    # Used for idempotent offline synchronization.
+    event_id = db.Column(
+        db.String(36),
+        unique=True,
+        nullable=True
+    )
+
     trip_id = db.Column(
         db.String(36),
         db.ForeignKey("trips.id"),
@@ -20,12 +28,12 @@ class GPSLocation(db.Model):
     )
 
     latitude = db.Column(
-        db.Numeric(10, 7),
+        db.Float,
         nullable=False
     )
 
     longitude = db.Column(
-        db.Numeric(10, 7),
+        db.Float,
         nullable=False
     )
 
@@ -53,5 +61,8 @@ class GPSLocation(db.Model):
 
     recorded_at = db.Column(
         db.DateTime,
-        default=datetime.utcnow
+        default=datetime.utcnow,
+        nullable=False
     )
+
+    trip = db.relationship("Trip")

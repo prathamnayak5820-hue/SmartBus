@@ -19,33 +19,33 @@ class SOSEvent(db.Model):
         nullable=False
     )
 
-    raised_by = db.Column(
+    bus_id = db.Column(
+        db.String(36),
+        db.ForeignKey("buses.id"),
+        nullable=False
+    )
+
+    driver_id = db.Column(
         db.String(36),
         db.ForeignKey("users.id"),
         nullable=False
     )
 
-    latitude = db.Column(
-        db.Numeric(10, 7),
-        nullable=True
-    )
+    latitude = db.Column(db.Float, nullable=False)
+    longitude = db.Column(db.Float, nullable=False)
 
-    longitude = db.Column(
-        db.Numeric(10, 7),
-        nullable=True
-    )
-
-    message = db.Column(
-        db.Text,
-        nullable=True
-    )
+    message = db.Column(db.Text)
 
     status = db.Column(
-        db.String(30),
+        db.String(20),
+        nullable=False,
         default="ACTIVE"
     )
 
     created_at = db.Column(
         db.DateTime,
+        nullable=False,
         default=datetime.utcnow
     )
+
+    resolved_at = db.Column(db.DateTime, nullable=True)

@@ -31,7 +31,7 @@ class Notification(db.Model):
     )
 
     title = db.Column(
-        db.String(150),
+        db.String(200),
         nullable=False
     )
 
@@ -42,10 +42,15 @@ class Notification(db.Model):
 
     is_read = db.Column(
         db.Boolean,
-        default=False
+        default=False,
+        nullable=False
     )
 
     created_at = db.Column(
         db.DateTime,
-        default=datetime.utcnow
+        default=datetime.utcnow,
+        nullable=False
     )
+
+    user = db.relationship("User")
+    trip = db.relationship("Trip")

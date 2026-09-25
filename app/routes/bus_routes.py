@@ -153,7 +153,6 @@ def assign_driver(bus_id):
         }), 400
 
     bus.driver_id = driver_id
-
     db.session.commit()
 
     return jsonify({
