@@ -39,3 +39,8 @@ class Bus(db.Model):
         db.DateTime,
         default=datetime.utcnow
     )
+
+    driver = db.relationship(
+        "User",
+        foreign_keys=[driver_id]
+    )

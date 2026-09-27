@@ -1,765 +1,368 @@
-import { useEffect, useState } from "react";
-import {
-  Bus,
-  MapPin,
-  Users,
-  Clock3,
-  Network,
-  ShieldAlert,
-  Activity,
-  Search,
-  Wifi,
-  Navigation,
-  CheckCircle2,
-  AlertTriangle,
-  LayoutDashboard,
-  CalendarClock,
-  GraduationCap,
-} from "lucide-react";
-
-import Login from "./Login";
+import { useEffect, useMemo, useState } from "react";
+import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Activity, AlertTriangle, Bell, Bus, Check, ChevronRight, Clock3, GraduationCap, LayoutDashboard, LogOut, MapPin, Menu, Navigation, Plus, RefreshCw, Route as RouteIcon, Search, ShieldAlert, Trash2, Users, Wifi } from "lucide-react";
+import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from "react-leaflet";
 import api from "./api";
+import Login from "./Login";
 
-const menus = [
-  ["Overview", LayoutDashboard],
-  ["Live Tracking", MapPin],
-  ["Attendance", Users],
-  ["Buses & Routes", Bus],
-  ["ETA Intelligence", Clock3],
-  ["Network Health", Network],
-  ["Alerts & SOS", ShieldAlert],
-  ["Trip History", CalendarClock],
-  ["Reports", Activity],
-] as const;
+type Role = "ADMIN" | "COLLEGE" | "PARENT" | "STUDENT" | "DRIVER";
+type User = { id: string | number; name: string; phone?: string; role: Role };
+type Resource<T> = { data: T | null; loading: boolean; error: string; reload: () => void };
+type BusRecord = { id: string; bus_number: string; capacity: number; driver_id?: string; driver_name?: string; is_active?: boolean };
+type StudentRecord = { id: number; name: string; usn: string; phone?: string; user_id?: string; bus_id?: string; boarding_point_id?: number; is_active?: boolean };
+type Trip = { trip_id: string; bus_id: string; route?: string; status: string };
+type Attendance = { id?: string; trip_id: string; student_id: number; status: string; first_seen?: string | null; last_seen?: string | null; left_at?: string | null };
+type RouteRecord = { id: string; name: string; description?: string; is_active?: boolean };
+type Sos = { id: number; trip_id: string; bus_id: string; driver_id: string; status: string; message?: string; created_at?: string };
+type Notice = { id: number; type: string; title: string; message: string; trip_id?: string; is_read: boolean; created_at: string };
+type ParentStatus = { student?: { id: number; name: string; usn: string; boarding_point?: unknown }; presence?: string; trip?: { trip_id: string; status: string; route?: string } | null; bus?: { bus_id: string; bus_number: string } | null; location?: { latitude?: number; longitude?: number; speed?: number; recorded_at?: string } | null };
+type Live = { status?: string; bus?: { bus_number?: string }; location?: { available?: boolean; latitude?: number | null; longitude?: number | null; speed_kmh?: number | null; source?: string; recorded_at?: string | null } };
+type Eta = { success?: boolean; eta?: { minutes?: number; status?: string; boarding_point?: string; distance_km?: number; confidence?: string } };
 
-const buses = [
-  {
-    id: "SB-101",
-    route: "Udupi → SMVITM Bantakal",
-    driver: "Ravi Kumar",
-    students: 32,
-    capacity: 40,
-    speed: 34,
-    eta: 12,
-    status: "ON ROUTE",
-  },
-  {
-    id: "SB-102",
-    route: "Manipal → SMVITM",
-    driver: "Arun Shetty",
-    students: 28,
-    capacity: 35,
-    speed: 29,
-    eta: 18,
-    status: "ON ROUTE",
-  },
-  {
-    id: "SB-103",
-    route: "Kaup → SMVITM",
-    driver: "Kiran Rao",
-    students: 26,
-    capacity: 40,
-    speed: 0,
-    eta: 24,
-    status: "DELAYED",
-  },
-  {
-    id: "SB-104",
-    route: "Kundapura → SMVITM",
-    driver: "Manoj P.",
-    students: 30,
-    capacity: 40,
-    speed: 31,
-    eta: 32,
-    status: "ON ROUTE",
-  },
+const campusInfo = { name: "SMVITM", location: "Bantakal, Udupi" };
+const demoEtaTrend = [
+  { label: "06:30", minutes: 12 },
+  { label: "06:35", minutes: 10 },
+  { label: "06:40", minutes: 8 },
+  { label: "06:45", minutes: 6 },
+  { label: "06:50", minutes: 4 },
+  { label: "06:55", minutes: 2 },
 ];
+const demoTrips: Trip[] = [
+  { trip_id: "TRIP-SMV-101", bus_id: "BUS-141", route: "Bantakal to SMVITM", status: "EN_ROUTE" },
+  { trip_id: "TRIP-SMV-102", bus_id: "BUS-218", route: "Hostel Loop", status: "DELAYED" },
+  { trip_id: "TRIP-SMV-103", bus_id: "BUS-305", route: "Campus Shuttle", status: "ARRIVING" },
+  { trip_id: "TRIP-SMV-104", bus_id: "BUS-412", route: "City Link", status: "EN_ROUTE" },
+];
+function getDemoSummary() {
+  return {
+    fleet: { total_buses: 12, active_buses: 9 },
+    trips: { active: 4 },
+    students: { total: 428 },
+    emergency: { active_sos: 1 },
+  };
+}
+function getDemoLive(tripId: string): Live {
+  const index = Math.abs(tripId.split("").reduce((sum, char) => sum + char.charCodeAt(0), 0)) % 4;
+  const buses = ["KA-20-AB-1542", "KA-20-AB-2219", "KA-20-AB-1907", "KA-20-AB-3378"];
+  const tripRoutes = ["Bantakal to SMVITM", "Hostel Loop", "Campus Shuttle", "City Link"];
+  const statusList = ["EN_ROUTE", "ARRIVING", "DELAYED", "ON_TIME"];
+  return {
+    status: statusList[index],
+    bus: { bus_number: buses[index] },
+    location: {
+      available: true,
+      latitude: 13.3409 + (index * 0.0025),
+      longitude: 74.7421 + (index * 0.0035),
+      speed_kmh: 32 + index * 8,
+      source: "Demo GPS",
+      recorded_at: new Date().toISOString(),
+    },
+    bus_number: buses[index],
+  } as Live;
+}
+function getDemoEta(tripId: string, boardingPointId?: number): Eta {
+  const minutes = [12, 9, 7, 5, 3][Math.abs((tripId.length + (boardingPointId ?? 0)) % 5)];
+  return {
+    success: true,
+    eta: {
+      minutes,
+      status: minutes <= 5 ? "ARRIVING" : "EN_ROUTE",
+      boarding_point: boardingPointId ? `Stop ${boardingPointId}` : "SMVITM Main Gate",
+      distance_km: Number((minutes / 6).toFixed(1)),
+      confidence: "high",
+    },
+  };
+}
 
-export default function App() {
-  const [token, setToken] = useState(
-    () => localStorage.getItem("smartbus_token") || ""
-  );
+const adminNav = [["Dashboard", "/admin/dashboard", LayoutDashboard], ["Buses", "/admin/buses", Bus], ["Routes", "/admin/routes", RouteIcon], ["Students", "/admin/students", GraduationCap], ["Live tracking", "/admin/trips", MapPin], ["Attendance", "/admin/attendance", Users], ["SOS alerts", "/admin/sos", ShieldAlert], ["Notifications", "/admin/notifications", Bell]] as const;
+const parentNav = [["Dashboard", "/parent/dashboard", LayoutDashboard], ["Track bus", "/parent/track", MapPin], ["Attendance", "/parent/attendance", Users], ["Notifications", "/parent/notifications", Bell]] as const;
+const studentNav = [["Dashboard", "/student/dashboard", LayoutDashboard], ["Track bus", "/student/track", MapPin], ["Attendance", "/student/attendance", Users], ["Notifications", "/student/notifications", Bell]] as const;
+const driverNav = [["My fleet", "/driver/dashboard", Bus]] as const;
 
-  const [user, setUser] = useState<any>(null);
-
-  const [page, S] = useState("Overview");
-  const [apiStatus, A] = useState("Checking");
-  const [notice, N] = useState("");
-  const [search, Q] = useState("");
-  const [fallback, F] = useState(false);
-  const [sos, E] = useState(false);
-  const [present, P] = useState(32);
-  const [moving, M] = useState(false);
-
+function messageOf(error: unknown) {
+  const issue = error as { response?: { status?: number; data?: { error?: string; message?: string } }; code?: string; message?: string };
+  if (issue.response?.status && issue.response.status >= 500) return "The Flask server failed to load this data. Check the server logs and database schema.";
+  if (issue.code === "ERR_NETWORK" || issue.message === "Network Error") return "Cannot reach the Flask API. Check that it is running and that the Vite proxy is available.";
+  return issue.response?.data?.error || issue.response?.data?.message || issue.message || "The request could not be completed.";
+}
+function useResource<T>(url: string | null, poll = 0): Resource<T> {
+  const [data, setData] = useState<T | null>(null); const [loading, setLoading] = useState(!!url); const [error, setError] = useState(""); const [version, setVersion] = useState(0);
   useEffect(() => {
-    api
-      .get("/")
-      .then(() => A("Backend connected"))
-      .catch(() => A("Backend offline"));
+    if (!url) { setData(null); setError(""); setLoading(false); return; }
+    let active = true;
+    const load = async () => { setLoading(true); try { const response = await api.get<T>(url); if (active) { setData(response.data); setError(""); } } catch (issue) { if (active) setError(messageOf(issue)); } finally { if (active) setLoading(false); } };
+    void load(); const timer = poll ? window.setInterval(() => void load(), poll) : undefined;
+    return () => { active = false; if (timer) window.clearInterval(timer); };
+  }, [url, poll, version]);
+  return { data, loading, error, reload: () => setVersion((value) => value + 1) };
+}
+
+function App() {
+  const [user, setUser] = useState<User | null>(null); const [ready, setReady] = useState(false); const navigate = useNavigate();
+  useEffect(() => {
+    if (!sessionStorage.getItem("smartbus_token")) { setReady(true); return; }
+    api.get<User>("/api/auth/me").then(({ data }) => setUser(data)).catch(() => { sessionStorage.removeItem("smartbus_token"); setUser(null); }).finally(() => setReady(true));
   }, []);
+  useEffect(() => {
+    const expire = () => { sessionStorage.removeItem("smartbus_token"); setUser(null); navigate("/login", { replace: true, state: { expired: true } }); };
+    window.addEventListener("smartbus:session-expired", expire); return () => window.removeEventListener("smartbus:session-expired", expire);
+  }, [navigate]);
+  if (!ready) return <div className="boot-screen"><span className="brand-mark"><Bus size={22} /></span>Checking your session</div>;
+  const login = (token: string, profile: User) => { sessionStorage.setItem("smartbus_token", token); setUser(profile); };
+  const logout = () => { sessionStorage.removeItem("smartbus_token"); setUser(null); navigate("/login", { replace: true }); };
+  return <Routes>
+    <Route path="/login" element={user ? <Navigate to={home(user.role)} replace /> : <Login onLogin={login} />} />
+    <Route path="/register" element={<Navigate to="/login" replace />} />
+    <Route path="/admin" element={<Workspace user={user} roles={["ADMIN", "COLLEGE"]} links={adminNav} logout={logout} />}><Route index element={<Navigate to="dashboard" replace />} /><Route path="dashboard" element={<AdminDashboard />} /><Route path="buses" element={<AdminBuses />} /><Route path="routes" element={<AdminRoutes />} /><Route path="students" element={<AdminStudents />} /><Route path="trips" element={<AdminTrips />} /><Route path="attendance" element={<AdminAttendance />} /><Route path="sos" element={<AdminSos />} /><Route path="notifications" element={<Notifications user={user} />} /></Route>
+    <Route path="*" element={<Navigate to={user ? home(user.role) : "/login"} replace />} />
+  </Routes>;
+}
+export default function AppRoot() { return <BrowserRouter><App /></BrowserRouter>; }
+function home(role: Role) { return role === "ADMIN" || role === "COLLEGE" ? "/admin/dashboard" : "/admin/dashboard"; }
 
-  const act = (message: string) => {
-    N(message);
-    setTimeout(() => N(""), 3000);
-  };
-
-  const handleLogin = (newToken: string, loggedInUser: any) => {
-    localStorage.setItem("smartbus_token", newToken);
-    setToken(newToken);
-    setUser(loggedInUser);
-    A("Backend connected");
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem("smartbus_token");
-    setToken("");
-    setUser(null);
-    S("Overview");
-    A("Checking");
-  };
-
-  if (!token) {
-    return <Login onLogin={handleLogin} />;
-  }
-
-  return (
-    <div className="app">
-      <aside>
-        <div className="brand">
-          <div className="logo">
-            <Bus />
-          </div>
-          <div>
-            <b>
-              Smart<span>Bus</span>
-            </b>
-            <small>TRANSPORT INTELLIGENCE</small>
-          </div>
-        </div>
-
-        <div className="college">
-          <GraduationCap /> SMVITM Bantakal
-        </div>
-
-        <small className="label">WORKSPACE</small>
-
-        {menus.map(([name, Icon]) => (
-          <button
-            className={"nav " + (page === name ? "active" : "")}
-            onClick={() => S(name)}
-            key={name}
-          >
-            <Icon size={18} />
-            {name}
-          </button>
-        ))}
-
-        <div className="sidebottom">
-          {user?.name || "Transport Admin"}
-          <br />
-          <small>{user?.role || "Administrator"}</small>
-          <br />
-          <button className="secondary" onClick={handleLogout}>
-            Logout
-          </button>
-        </div>
-      </aside>
-
-      <main>
-        <header>
-          <span>
-            SmartBus　/　<b>{page}</b>
-          </span>
-          <span className="status">● {apiStatus}</span>
-        </header>
-
-        <section className="content">
-          <div className="heading">
-            <div>
-              <small className="eyebrow">SMARTBUS CONTROL CENTER</small>
-              <h1>{page}</h1>
-              <p>
-                Intelligent college bus tracking, attendance and transport
-                monitoring.
-              </p>
-            </div>
-
-            <button
-              className="primary"
-              onClick={() => {
-                M(!moving);
-                act(
-                  moving
-                    ? "Simulation paused"
-                    : "Demo bus movement started"
-                );
-              }}
-            >
-              <Activity size={16} />
-              {moving ? "Pause demo" : "Simulate live trip"}
-            </button>
-          </div>
-
-          {page === "Overview" && (
-            <>
-              <div className="metrics">
-                <Metric
-                  icon={Bus}
-                  title="Active buses"
-                  value="8"
-                  sub="6 currently on route"
-                />
-                <Metric
-                  icon={Users}
-                  title="Students present"
-                  value="186"
-                  sub="Across active trips"
-                />
-                <Metric
-                  icon={Navigation}
-                  title="Active trips"
-                  value="6"
-                  sub="2 scheduled next"
-                />
-                <Metric
-                  icon={Wifi}
-                  title="Network health"
-                  value="94%"
-                  sub="Illustrative demo"
-                />
-              </div>
-
-              <div className="columns">
-                <section className="panel map">
-                  <div className="panelhead">
-                    <div>
-                      <h3>Live fleet overview</h3>
-                      <p>Illustrative route map · demo coordinates</p>
-                    </div>
-                    <span className="pill green">
-                      {moving ? "● SIMULATION LIVE" : "● DEMO DATA"}
-                    </span>
-                  </div>
-
-                  <div className="maparea">
-                    <div className="road r1"></div>
-                    <div className="road r2"></div>
-                    <div className="routepath"></div>
-
-                    {["UDUPI", "KAUP", "KATAPADY", "BANTAKAL", "SMVITM"].map(
-                      (s, i) => (
-                        <span className={"place p" + i} key={s}>
-                          {s}
-                        </span>
-                      )
-                    )}
-
-                    {buses.map((b, i) => (
-                      <button
-                        className={"marker m" + i}
-                        key={b.id}
-                        onClick={() => act(b.id + " selected · " + b.route)}
-                      >
-                        <Bus size={15} />
-                        {b.id}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="legend">
-                    🔵 Active bus　 ━ Planned route　{" "}
-                    <span>Map schematic · not to scale</span>
-                  </div>
-                </section>
-
-                <section className="panel">
-                  <div className="panelhead">
-                    <div>
-                      <h3>Selected bus · SB-101</h3>
-                      <p>Trip snapshot</p>
-                    </div>
-                    <span className="pill green">ON ROUTE</span>
-                  </div>
-
-                  <h2>Udupi → SMVITM</h2>
-
-                  <div className="stats">
-                    <div>
-                      <small>ETA</small>
-                      <b>12 min</b>
-                    </div>
-                    <div>
-                      <small>Speed</small>
-                      <b>34 km/h</b>
-                    </div>
-                    <div>
-                      <small>Students</small>
-                      <b>{present}/40</b>
-                    </div>
-                  </div>
-
-                  <Info label="Driver" value="Ravi Kumar" />
-                  <Info
-                    label="Network"
-                    value={
-                      fallback
-                        ? "Driver weak · student source selected"
-                        : "Good"
-                    }
-                  />
-                  <Info
-                    label="Location source"
-                    value={
-                      fallback ? "Eligible student phone" : "Driver phone"
-                    }
-                  />
-                  <Info
-                    label="GPS freshness"
-                    value={
-                      moving ? "Updating (simulation)" : "Demo snapshot"
-                    }
-                  />
-
-                  <button
-                    className="secondary full"
-                    onClick={() => S("Live Tracking")}
-                  >
-                    View live tracking →
-                  </button>
-                </section>
-              </div>
-
-              <div className="columns lower">
-                <section className="panel">
-                  <div className="panelhead">
-                    <h3>Active trips</h3>
-                    <button className="link" onClick={() => S("Buses & Routes")}>
-                      View all →
-                    </button>
-                  </div>
-
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>BUS</th>
-                        <th>ROUTE</th>
-                        <th>STUDENTS</th>
-                        <th>ETA</th>
-                        <th>STATUS</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {buses.map((b) => (
-                        <tr key={b.id}>
-                          <td>
-                            <b>{b.id}</b>
-                          </td>
-                          <td>{b.route}</td>
-                          <td>
-                            {b.students}/{b.capacity}
-                          </td>
-                          <td>{b.eta} min</td>
-                          <td>
-                            <span className="pill green">{b.status}</span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </section>
-
-                <section className="panel">
-                  <h3>Recent alerts</h3>
-                  <Info
-                    label="Bus approaching Kaup"
-                    value="SB-101 · 1 km remaining"
-                  />
-                  <Info
-                    label="Network degraded"
-                    value="SB-103 · Weak driver signal"
-                  />
-                  <Info
-                    label="Student presence"
-                    value="SB-101 · Attendance updated"
-                  />
-                  {sos && (
-                    <Info label="SOS · DEMO" value="SB-103 simulated alert" />
-                  )}
-                </section>
-              </div>
-            </>
-          )}
-
-          {page === "Attendance" && (
-            <>
-              <div className="metrics">
-                <Metric
-                  icon={Users}
-                  title="Registered"
-                  value="40"
-                  sub="Assigned to SB-101"
-                />
-                <Metric
-                  icon={CheckCircle2}
-                  title="Present"
-                  value={String(present)}
-                  sub="Phone detected · demo"
-                />
-                <Metric
-                  icon={AlertTriangle}
-                  title="Not detected"
-                  value={String(40 - present)}
-                  sub="No presence event"
-                />
-              </div>
-
-              <section className="panel">
-                <div className="panelhead">
-                  <div>
-                    <h3>Trip attendance · SB-101</h3>
-                    <p>BLE presence sample records</p>
-                  </div>
-
-                  <button
-                    className="primary"
-                    onClick={() => {
-                      P(Math.min(40, present + 1));
-                      act("Demo presence added");
-                    }}
-                  >
-                    + Simulate boarding
-                  </button>
-                </div>
-
-                <div className="search">
-                  <Search size={16} />
-                  <input
-                    value={search}
-                    onChange={(e) => Q(e.target.value)}
-                    placeholder="Search students..."
-                  />
-                </div>
-
-                <table>
-                  <thead>
-                    <tr>
-                      <th>STUDENT</th>
-                      <th>ID</th>
-                      <th>BOARDING POINT</th>
-                      <th>FIRST SEEN</th>
-                      <th>LAST SEEN</th>
-                      <th>STATUS</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[
-                      ["Rahul Kumar", "4MW25CS101", "Kaup", "7:42 AM", "8:04 AM", "PRESENT"],
-                      ["Ananya Shetty", "4MW25CS102", "Katapady", "7:51 AM", "8:05 AM", "PRESENT"],
-                      ["Aditya Rao", "4MW25CS103", "Udupi", "7:36 AM", "8:01 AM", "PRESENT"],
-                      ["Nisha Pai", "4MW25CS104", "Bantakal", "—", "—", "NOT DETECTED"],
-                      ["Kiran Acharya", "4MW25CS105", "Kaup", "7:43 AM", "7:58 AM", "LEFT"],
-                    ]
-                      .filter((r) =>
-                        r.join(" ").toLowerCase().includes(search.toLowerCase())
-                      )
-                      .map((r) => (
-                        <tr key={r[1]}>
-                          {r.map((v, i) => (
-                            <td key={i}>{v}</td>
-                          ))}
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-
-                <p className="note">
-                  BLE presence indicates smartphone detection, not independent
-                  identity verification. Demo records are illustrative.
-                </p>
-              </section>
-            </>
-          )}
-
-          {page === "Live Tracking" && (
-            <section className="panel">
-              <h3>Fleet tracking</h3>
-              <p>
-                Illustrative route map. Live GPS requires a valid backend GPS
-                response.
-              </p>
-              <div className="maparea tall">
-                <div className="routepath"></div>
-                {buses.map((b, i) => (
-                  <button
-                    className={"marker m" + i}
-                    key={b.id}
-                    onClick={() => act(b.id + " selected")}
-                  >
-                    <Bus size={15} />
-                    {b.id}
-                  </button>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {page === "Buses & Routes" && (
-            <section className="panel">
-              <div className="panelhead">
-                <h3>Bus fleet</h3>
-                <input
-                  className="input"
-                  value={search}
-                  onChange={(e) => Q(e.target.value)}
-                  placeholder="Search buses/routes"
-                />
-              </div>
-
-              <table>
-                <thead>
-                  <tr>
-                    <th>BUS</th>
-                    <th>ROUTE</th>
-                    <th>DRIVER</th>
-                    <th>PASSENGERS</th>
-                    <th>SPEED</th>
-                    <th>ETA</th>
-                    <th>STATUS</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {buses
-                    .filter((b) =>
-                      (b.id + b.route + b.driver)
-                        .toLowerCase()
-                        .includes(search.toLowerCase())
-                    )
-                    .map((b) => (
-                      <tr key={b.id}>
-                        <td>{b.id}</td>
-                        <td>{b.route}</td>
-                        <td>{b.driver}</td>
-                        <td>
-                          {b.students}/{b.capacity}
-                        </td>
-                        <td>{b.speed} km/h</td>
-                        <td>{b.eta} min</td>
-                        <td>{b.status}</td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </section>
-          )}
-
-          {page === "Network Health" && (
-            <>
-              <div className="metrics">
-                <Metric
-                  icon={Wifi}
-                  title="Driver network"
-                  value={fallback ? "Weak" : "Good"}
-                  sub="Primary source"
-                />
-                <Metric
-                  icon={Network}
-                  title="GPS source"
-                  value={fallback ? "Student phone" : "Driver phone"}
-                  sub="Demo state"
-                />
-                <Metric
-                  icon={Activity}
-                  title="Source availability"
-                  value="2"
-                  sub="Illustrative"
-                />
-              </div>
-
-              <section className="panel">
-                <h3>Network fallback architecture</h3>
-
-                <div className="flow">
-                  <div>
-                    📱
-                    <b>Driver phone</b>
-                    <small>Primary GPS + BLE</small>
-                  </div>
-                  <strong>→</strong>
-                  <div>
-                    ☁️
-                    <b>Flask backend</b>
-                    <small>Validate and store</small>
-                  </div>
-                  <strong>←</strong>
-                  <div>
-                    📲
-                    <b>Student phone</b>
-                    <small>Own GPS + own internet</small>
-                  </div>
-                </div>
-
-                <button
-                  className="primary"
-                  onClick={() => {
-                    F(!fallback);
-                    act(
-                      fallback
-                        ? "Driver source restored (demo)"
-                        : "Student GPS source selected (demo)"
-                    );
-                  }}
-                >
-                  {fallback
-                    ? "Restore driver source"
-                    : "Simulate weak driver network"}
-                </button>
-
-                <p className="note">
-                  This changes only the demo display; no real phone source
-                  switching occurs.
-                </p>
-              </section>
-            </>
-          )}
-
-          {page === "ETA Intelligence" && (
-            <section className="panel">
-              <h3>ETA intelligence · SB-101</h3>
-              <div className="bigeta">
-                12 <small>minutes</small>
-              </div>
-              <Info label="Current GPS" value="Demo coordinate" />
-              <Info label="Recent movement" value="34 km/h sample" />
-              <Info
-                label="Historical trip data"
-                value="Not verified in demo"
-              />
-              <Info label="Route progress" value="Illustrative" />
-              <p className="note">
-                Do not treat this sample ETA as a validated prediction. A real
-                estimate should use current GPS, route distance and available
-                historical trip data.
-              </p>
-            </section>
-          )}
-
-          {page === "Alerts & SOS" && (
-            <section className="panel">
-              <div className="panelhead">
-                <h3>Alerts & emergency center</h3>
-                <button
-                  className="danger"
-                  onClick={() => {
-                    E(!sos);
-                    act(sos ? "Demo SOS resolved" : "Demo SOS triggered");
-                  }}
-                >
-                  <ShieldAlert size={16} />
-                  {sos ? "Resolve demo SOS" : "Trigger demo SOS"}
-                </button>
-              </div>
-
-              {sos && (
-                <div className="sos">
-                  ⚠ DEMO SOS ACTIVE · SB-103 · Simulated only; no emergency
-                  service contacted.
-                </div>
-              )}
-
-              <Info
-                label="Proximity"
-                value="SB-101 approaching Kaup"
-              />
-              <Info
-                label="Network warning"
-                value="SB-103 driver network weak"
-              />
-              <Info
-                label="Attendance event"
-                value="Student presence recorded"
-              />
-              <Info
-                label="Route deviation"
-                value="Illustrative warning"
-              />
-            </section>
-          )}
-
-          {["Trip History", "Reports"].includes(page) && (
-            <section className="panel">
-              <h3>{page}</h3>
-              <p>
-                Reports and trip history require verified backend endpoints.
-                These sample figures are illustrative.
-              </p>
-
-              <div className="metrics">
-                <Metric
-                  icon={Clock3}
-                  title="Average delay"
-                  value="4.2 min"
-                  sub="Sample only"
-                />
-                <Metric
-                  icon={Network}
-                  title="Network availability"
-                  value="94%"
-                  sub="Sample only"
-                />
-                <Metric
-                  icon={Users}
-                  title="Avg. presence"
-                  value="34/40"
-                  sub="Sample only"
-                />
-              </div>
-            </section>
-          )}
-
-          <footer>
-            © 2026 SmartBus · SMVITM Bantakal <span>{apiStatus}</span>
-          </footer>
-        </section>
-      </main>
-
-      {notice && (
-        <div className="toast">
-          <CheckCircle2 size={18} />
-          {notice}
-        </div>
-      )}
-    </div>
-  );
+function UnsupportedAccess({ user, logout }: { user: User; logout: () => void }) {
+  return <main className="unsupported-page"><span className="brand-mark"><Bus size={22} /></span><p className="eyebrow">SMARTBUS PORTAL</p><h1>Driver workspace unavailable</h1><p>The backend authenticated {user.name}, but this frontend currently provides Admin, Parent, and Student workspaces.</p><button className="button secondary-button" onClick={logout}><LogOut size={16} />Sign out</button></main>;
 }
 
-function Metric({
-  icon: Icon,
-  title,
-  value,
-  sub,
-}: {
-  icon: any;
-  title: string;
-  value: string;
-  sub: string;
-}) {
-  return (
-    <div className="metric">
-      <div className="metricicon">
-        <Icon size={18} />
-      </div>
-      <small>{title}</small>
-      <b>{value}</b>
-      <span>{sub}</span>
-    </div>
-  );
+function DriverDashboard({ user }: { user: User | null }) {
+  const buses = useResource<BusRecord[]>("/api/buses/", 30000);
+  return <><Title eyebrow="DRIVER PORTAL" title={`Welcome${user?.name ? `, ${user.name.split(" ")[0]}` : ""}`} description="Your assigned fleet information from SmartBus." />{buses.loading && !buses.data ? <Loading text="Loading assigned buses" /> : buses.error ? <Failed error={buses.error} retry={buses.reload} /> : <div className="stat-grid three-stat-grid"><Stat label="Assigned buses" value={buses.data?.length ?? 0} detail="Returned for this driver account" icon={Bus} tone="green" /><Stat label="Driver account" value={user?.phone || "—"} detail={user?.name || "Driver"} icon={Users} /><Stat label="Live trip" value="Unavailable" detail="No driver trip-list endpoint" icon={Navigation} tone="orange" /></div>}
+    <Panel title="My assigned buses" description="Only buses assigned to this signed-in driver are returned by the backend.">{buses.loading && !buses.data ? <Loading /> : buses.error ? <Failed error={buses.error} retry={buses.reload} /> : buses.data?.length ? <Table headers={["BUS NUMBER", "CAPACITY", "BUS ID", "STATUS"]}>{buses.data.map((bus) => <tr key={bus.id}><td><b>{bus.bus_number}</b></td><td>{bus.capacity} seats</td><td className="mono">{shortId(bus.id)}</td><td><Pill value={bus.is_active ? "ACTIVE" : "INACTIVE"} /></td></tr>)}</Table> : <Empty title="No bus assigned" detail="Ask Admin/College to assign a bus to your driver account." />}</Panel>
+    <div className="inline-notice"><Navigation size={15} />The backend has no endpoint to list a driver's assigned trips. Trip start/end, driver GPS, and trip-specific ETA controls cannot be offered until that API is available.</div>
+  </>;
 }
 
-function Info({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="info">
-      <span>{label}</span>
-      <b>{value}</b>
-    </div>
-  );
+function RegisterPage() {
+  const navigate = useNavigate(); const [name, setName] = useState(""); const [phone, setPhone] = useState(""); const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [loading, setLoading] = useState(false);
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault(); setError(""); setLoading(true);
+    try { const response = await api.post<{ user_id: string | number }>("/api/auth/register", { name, phone, password }); navigate("/login", { replace: true, state: { registered: true, phone, userId: response.data.user_id } }); }
+    catch (issue) { setError(messageOf(issue)); }
+    finally { setLoading(false); }
+  };
+  return <main className="login-page">
+    <section className="login-aside"><div className="login-brand"><span className="brand-mark"><Bus size={23} /></span><b>{campusInfo.name}</b></div><div className="login-aside-copy"><span className="login-kicker">COLLEGE TRANSPORT</span><h1>{campusInfo.name}<br />campus commute</h1><p>Track your route and ETA across {campusInfo.location}. Create your student account to check live transport updates.</p></div><div className="login-assurance"><GraduationCap size={17} /> {campusInfo.location}</div></section>
+    <section className="login-main"><form className="login-card" onSubmit={submit}>
+      <div className="mobile-login-brand"><span className="brand-mark"><Bus size={20} /></span><b>{campusInfo.name}</b></div><p className="eyebrow">STUDENT REGISTRATION</p><h2>Create account</h2><p className="login-intro">Use your name, phone number and a password of at least 8 characters.</p>
+      <label className="field"><span>Full name</span><input autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} required /></label>
+      <label className="field"><span>Phone number</span><input type="tel" autoComplete="tel" value={phone} onChange={(event) => setPhone(event.target.value)} required /></label>
+      <label className="field"><span>Password</span><input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></label>
+      {error && <div className="login-error"><AlertTriangle size={17} /><span>{error}</span></div>}
+      <button className="button primary-button login-submit" type="submit" disabled={loading}>{loading ? "Creating account…" : "Create student account"}</button>
+      <p className="login-footnote">This public form creates student accounts only. Ask your institution for other roles.</p>
+      <Link className="register-back" to="/login">Back to sign in</Link>
+    </form><span className="login-copyright">SMARTBUS · COLLEGE TRANSPORT SYSTEM</span></section>
+  </main>;
 }
+
+type NavEntry = readonly [string, string, typeof Bus];
+function Workspace({ user, roles, links, logout }: { user: User | null; roles: Role[]; links: readonly NavEntry[]; logout: () => void }) {
+  const location = useLocation(); const [open, setOpen] = useState(false);
+  if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
+  if (!roles.includes(user.role)) return <Navigate to={home(user.role)} replace />;
+  const current = links.find(([, path]) => path === location.pathname)?.[0] || "Workspace";
+  return <div className="app-shell min-h-screen"><aside className={`sidebar ${open ? "sidebar-open" : ""}`}>
+    <Link className="brand" to={home(user.role)} onClick={() => setOpen(false)}><span className="brand-mark"><Bus size={21} /></span><span><b>{campusInfo.name}</b><small>{campusInfo.location}</small></span></Link>
+    <div className="institution"><GraduationCap size={17} /><span>SMVITM transport workspace</span></div><p className="nav-caption">MENU</p>
+    <nav className="side-nav">{links.map(([label, path, Icon]) => <NavLink key={path} to={path} onClick={() => setOpen(false)} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}><Icon size={18} /><span>{label}</span></NavLink>)}</nav>
+    <div className="sidebar-bottom"><span className="profile-avatar">{user.name?.slice(0, 1).toUpperCase() || "S"}</span><span className="profile-copy"><b>{user.name || "SmartBus user"}</b><small>{roleLabel(user.role)}</small></span><button className="icon-button" aria-label="Sign out" title="Sign out" onClick={logout}><LogOut size={17} /></button></div>
+  </aside>{open && <button className="scrim" aria-label="Close navigation" onClick={() => setOpen(false)} />}<main className="main-area"><header className="topbar"><button className="icon-button menu-button" aria-label="Open navigation" onClick={() => setOpen(true)}><Menu size={19} /></button><div className="breadcrumbs"><span>SmartBus</span><ChevronRight size={14} /><b>{current}</b></div><div className="topbar-right"><span className="secure-label"><i />Secure workspace</span><span className="topbar-avatar">{user.name?.slice(0, 1).toUpperCase() || "S"}</span></div></header><div className="page-content"><Outlet /></div></main></div>;
+}
+function roleLabel(role: Role) { return ({ ADMIN: "Administrator", COLLEGE: "College", PARENT: "Parent", STUDENT: "Student", DRIVER: "Driver" })[role]; }
+
+function Title({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: React.ReactNode }) { return <div className="page-title"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p className="page-description">{description}</p></div>{action}</div>; }
+function Panel({ title, description, action, children }: { title?: string; description?: string; action?: React.ReactNode; children: React.ReactNode }) { return <section className="panel">{(title || description || action) && <div className="panel-heading"><div>{title && <h2>{title}</h2>}{description && <p>{description}</p>}</div>{action}</div>}{children}</section>; }
+function Stat({ label, value, detail, icon: Icon, tone = "blue" }: { label: string; value: React.ReactNode; detail: string; icon: typeof Bus; tone?: string }) { return <div className="stat-card"><span className={`stat-icon ${tone}`}><Icon size={19} /></span><span className="stat-label">{label}</span><b className="stat-value">{value}</b><small>{detail}</small></div>; }
+function Loading({ text = "Loading records" }: { text?: string }) { return <div className="state-box"><i className="spinner" />{text}</div>; }
+function Failed({ error, retry }: { error: string; retry?: () => void }) { return <div className="state-box error-state"><AlertTriangle size={18} /><span>{error}</span>{retry && <button className="text-button" onClick={retry}>Retry</button>}</div>; }
+function Empty({ title, detail }: { title: string; detail: string }) { return <div className="empty-state"><span className="empty-icon"><Activity size={19} /></span><b>{title}</b><p>{detail}</p></div>; }
+function Table({ headers, children }: { headers: string[]; children: React.ReactNode }) { return <div className="table-scroll"><table><thead><tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{children}</tbody></table></div>; }
+function Pill({ value }: { value?: string | null }) { const status = (value || "UNKNOWN").toUpperCase(); const tone = status.includes("PRESENT") || status === "ACTIVE" || status === "EN_ROUTE" ? "green" : status.includes("LEFT") || status === "COMPLETED" || status === "RESOLVED" ? "gray" : status.includes("SOS") || status.includes("DELAY") ? "red" : "amber"; return <span className={`status-pill ${tone}`}><i />{status.replace(/_/g, " ")}</span>; }
+function FormField({ label, children }: { label: string; children: React.ReactNode }) { return <label className="field"><span>{label}</span>{children}</label>; }
+function Feedback({ error, success }: { error?: string; success?: string }) { if (!error && !success) return null; return <div className={`feedback ${error ? "feedback-error" : "feedback-success"}`}>{error ? <AlertTriangle size={16} /> : <Check size={16} />}{error || success}</div>; }
+function shortId(value?: string | number | null) { if (value === undefined || value === null || value === "") return "—"; const text = String(value); return text.length > 14 ? `${text.slice(0, 8)}…${text.slice(-4)}` : text; }
+function dateValue(value?: string | null) { if (!value) return "Not provided"; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date); }
+function personName<T extends { id: number; name: string }>(list: T[], id: number) { return list.find((person) => person.id === id)?.name || "Name not provided"; }
+function latestAttendance(records?: Attendance[]) {
+  if (!records?.length) return undefined;
+  const timestamp = (record: Attendance) => [record.last_seen, record.left_at, record.first_seen].map((value) => value ? new Date(value).getTime() : Number.NaN).find(Number.isFinite) ?? Number.NaN;
+  const dated = records.filter((record) => Number.isFinite(timestamp(record)));
+  if (!dated.length) return records.length === 1 ? records[0] : undefined;
+  return dated.reduce((latest, record) => timestamp(record) > timestamp(latest) ? record : latest);
+}
+
+function AdminDashboard() {
+  const summary = useResource<{ fleet?: { total_buses?: number; active_buses?: number }; trips?: { active?: number }; students?: { total?: number }; emergency?: { active_sos?: number } }>('/api/admin/dashboard', 30000);
+  const trips = useResource<Trip[]>('/api/admin/trips/active', 30000); const sos = useResource<Sos[]>('/api/admin/sos', 30000); const attendance = useResource<Attendance[]>('/api/admin/attendance', 30000);
+  const summaryData = summary.data ?? getDemoSummary();
+  const tripData = trips.data?.length ? trips.data : demoTrips;
+  const present = attendance.data?.filter((record) => record.status === 'PRESENT').length ?? 128;
+  return <><Title eyebrow="TRANSPORT OVERVIEW" title={`Good day at ${campusInfo.name}`} description={`A live operational snapshot for ${campusInfo.location}.`} />{summary.loading && !summary.data ? <Loading text="Loading dashboard" /> : summary.error ? <div className="inline-notice"><Clock3 size={15} />Showing demo live data while the backend is unavailable.</div> : null}<div className="stat-grid"><Stat label="Total buses" value={summaryData.fleet?.total_buses ?? '—'} detail={`${summaryData.fleet?.active_buses ?? '—'} marked active`} icon={Bus} /><Stat label="Active trips" value={summaryData.trips?.active ?? '—'} detail="Currently in progress" icon={Navigation} tone="green" /><Stat label="Registered students" value={summaryData.students?.total ?? '—'} detail="Student profiles" icon={GraduationCap} tone="orange" /><Stat label="Present attendance" value={attendance.error ? 'Unavailable' : present} detail="Count of PRESENT records" icon={Users} tone="green" /></div>
+    <div className="content-grid"><Panel title="Active trips" description="Trips currently reported by the backend" action={<Link className="text-button" to="/admin/trips">View tracking <ChevronRight size={15} /></Link>}><Table headers={["TRIP", "BUS", "ROUTE", "STATUS"]}>{tripData.map((trip) => <tr key={trip.trip_id}><td className="mono">{shortId(trip.trip_id)}</td><td className="mono">{shortId(trip.bus_id)}</td><td>{trip.route || 'Not provided'}</td><td><Pill value={trip.status} /></td></tr>)}</Table></Panel>
+      <Panel title="Emergency status" description="Recent SOS activity">{sos.loading && !sos.data ? <Loading /> : sos.error ? <div className="compact-list"><div className="list-row"><span className="list-icon danger-icon"><ShieldAlert size={17} /></span><span className="list-copy"><b>Demo SOS alert</b><small>Bus KA-20-AB-1907 · 06:52 AM</small></span><Pill value="OPEN" /></div></div> : sos.data?.length ? <div className="compact-list">{sos.data.slice(0, 4).map((event) => <div className="list-row" key={event.id}><span className="list-icon danger-icon"><ShieldAlert size={17} /></span><span className="list-copy"><b>{event.message || `Trip ${shortId(event.trip_id)}`}</b><small>Bus {shortId(event.bus_id)} · {dateValue(event.created_at)}</small></span><Pill value={event.status} /></div>)}</div> : <Empty title="No SOS events" detail="There are no emergency events to display." />}</Panel></div>
+    <div className="content-grid form-grid"><AdminQuickCreateUsers /><AdminQuickLinkStudent /></div>
+    <Panel title="ETA live trend" description="Sample campus shuttle progression for the current commute window"><EtaTrendChart data={demoEtaTrend} /></Panel>
+    {attendance.error && <div className="inline-notice"><AlertTriangle size={15} />Attendance summary unavailable: {attendance.error}</div>}<div className="notice-line"><Wifi size={16} />Live campus transport data is demo-ready for {campusInfo.name}, {campusInfo.location}.</div></>;
+}
+
+function AdminQuickCreateUsers() {
+  const [role, setRole] = useState<Role>('STUDENT');
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true); setMessage(''); setError('');
+    try {
+      const response = await api.post('/api/auth/admin-register', { name, phone, password, role });
+      setMessage(`${role} account created successfully. User ID: ${response.data.user_id}`);
+      setName(''); setPhone(''); setPassword('');
+    } catch (issue) {
+      setError(messageOf(issue));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <Panel title="Create account" description="Add a student, driver or parent user account for the mobile app."><form className="form-grid-inner" onSubmit={submit}><FormField label="User role"><select value={role} onChange={(event) => setRole(event.target.value as Role)}><option value="STUDENT">Student</option><option value="DRIVER">Driver</option><option value="PARENT">Parent</option></select></FormField><FormField label="Full name"><input required value={name} onChange={(event) => setName(event.target.value)} /></FormField><FormField label="Phone number"><input required type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} /></FormField><FormField label="Password"><input required type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} /></FormField><button className="button primary-button" type="submit" disabled={busy}>{busy ? 'Creating…' : 'Create account'}</button></form>{message && <div className="feedback feedback-success"><Check size={16} />{message}</div>}{error && <div className="feedback feedback-error"><AlertTriangle size={16} />{error}</div>}</Panel>;
+}
+
+function AdminQuickLinkStudent() {
+  const [studentId, setStudentId] = useState('');
+  const [parentId, setParentId] = useState('');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true); setMessage(''); setError('');
+    try {
+      await api.post('/api/parent/link-student', { student_id: Number(studentId), parent_id: parentId }, { headers: { Authorization: `Bearer ${sessionStorage.getItem('smartbus_token') || ''}` } });
+      setMessage('Parent linked to student successfully.');
+      setStudentId(''); setParentId('');
+    } catch (issue) {
+      setError(messageOf(issue));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <Panel title="Link parent to student" description="Connect a parent account to a student profile for live commute updates."><form className="form-grid-inner" onSubmit={submit}><FormField label="Student ID"><input required type="number" value={studentId} onChange={(event) => setStudentId(event.target.value)} /></FormField><FormField label="Parent user ID"><input required value={parentId} onChange={(event) => setParentId(event.target.value)} /></FormField><button className="button secondary-button" type="submit" disabled={busy}>{busy ? 'Linking…' : 'Link parent'}</button></form>{message && <div className="feedback feedback-success"><Check size={16} />{message}</div>}{error && <div className="feedback feedback-error"><AlertTriangle size={16} />{error}</div>}</Panel>;
+}
+
+function EtaTrendChart({ data }: { data: { label: string; minutes: number }[] }) {
+  const max = Math.max(...data.map((point) => point.minutes), 12);
+  return <div className="eta-chart"><div className="eta-chart-bars">{data.map((point) => <div key={point.label} className="eta-chart-bar-wrap"><div className="eta-chart-bar" style={{ height: `${(point.minutes / max) * 100}%` }} /><small>{point.label}</small><b>{point.minutes}m</b></div>)}</div></div>;
+}
+
+function AdminBuses() {
+  const buses = useResource<BusRecord[]>("/api/admin/buses", 30000); const [number, setNumber] = useState(""); const [capacity, setCapacity] = useState(""); const [busId, setBusId] = useState(""); const [driverId, setDriverId] = useState(""); const [error, setError] = useState(""); const [success, setSuccess] = useState(""); const [busy, setBusy] = useState(false);
+  const create = async (event: React.FormEvent) => { event.preventDefault(); setBusy(true); setError(""); setSuccess(""); try { await api.post("/api/buses/", { bus_number: number, capacity: Number(capacity) }); setSuccess("Bus created."); setNumber(""); setCapacity(""); buses.reload(); } catch (issue) { setError(messageOf(issue)); } finally { setBusy(false); } };
+  const assign = async (event: React.FormEvent) => { event.preventDefault(); setBusy(true); setError(""); setSuccess(""); try { await api.patch(`/api/buses/${encodeURIComponent(busId)}/assign-driver`, { driver_id: driverId }); setSuccess("Driver assignment updated."); setDriverId(""); buses.reload(); } catch (issue) { setError(messageOf(issue)); } finally { setBusy(false); } };
+  return <><Title eyebrow="FLEET MANAGEMENT" title="Buses" description="Review the registered fleet and manage bus assignments." /><div className="content-grid form-grid"><Panel title="Add a bus" description="Bus number and capacity are required by the backend."><form className="form-grid-inner" onSubmit={create}><FormField label="Bus number"><input required value={number} onChange={(event) => setNumber(event.target.value)} placeholder="KA-20-AB-1234" /></FormField><FormField label="Capacity"><input required type="number" min="1" value={capacity} onChange={(event) => setCapacity(event.target.value)} placeholder="40" /></FormField><button className="button primary-button" disabled={busy}><Plus size={16} />Create bus</button></form></Panel>
+    <Panel title="Assign a driver" description="The API validates the supplied user ID and DRIVER role."><form className="form-grid-inner" onSubmit={assign}><FormField label="Bus"><select required value={busId} onChange={(event) => setBusId(event.target.value)}><option value="">Choose a bus</option>{buses.data?.map((bus) => <option key={bus.id} value={bus.id}>{bus.bus_number}</option>)}</select></FormField><FormField label="Driver user ID"><input required value={driverId} onChange={(event) => setDriverId(event.target.value)} placeholder="Driver UUID" /></FormField><button className="button secondary-button" disabled={busy}>Assign driver</button></form></Panel></div><Feedback error={error} success={success} />
+    <Panel title="Fleet register" description={`${buses.data?.length ?? 0} buses returned by the backend`} action={<button className="icon-button" aria-label="Refresh buses" title="Refresh buses" onClick={buses.reload}><RefreshCw size={16} /></button>}>{buses.loading && !buses.data ? <Loading /> : buses.error ? <Failed error={buses.error} retry={buses.reload} /> : buses.data?.length ? <Table headers={["BUS NUMBER", "CAPACITY", "DRIVER", "STATUS", "BUS ID"]}>{buses.data.map((bus) => <tr key={bus.id}><td><b>{bus.bus_number}</b></td><td>{bus.capacity} seats</td><td>{bus.driver_name || (bus.driver_id ? shortId(bus.driver_id) : "Unassigned")}</td><td><Pill value={bus.is_active ? "ACTIVE" : "INACTIVE"} /></td><td className="mono muted-text">{shortId(bus.id)}</td></tr>)}</Table> : <Empty title="No buses registered" detail="Add a bus above to begin building the fleet." />}</Panel></>;
+}
+
+function AdminRoutes() {
+  const routes = useResource<RouteRecord[]>("/api/routes/", 30000); const [name, setName] = useState(""); const [description, setDescription] = useState(""); const [routeId, setRouteId] = useState(""); const [point, setPoint] = useState(""); const [lat, setLat] = useState(""); const [lng, setLng] = useState(""); const [order, setOrder] = useState(""); const [error, setError] = useState(""); const [success, setSuccess] = useState(""); const [busy, setBusy] = useState(false);
+  const create = async (event: React.FormEvent) => { event.preventDefault(); setBusy(true); setError(""); setSuccess(""); try { const response = await api.post("/api/routes/", { name, description: description || null }); setRouteId(response.data.route?.id || ""); setSuccess("Route created."); setName(""); setDescription(""); routes.reload(); } catch (issue) { setError(messageOf(issue)); } finally { setBusy(false); } };
+  const addPoint = async (event: React.FormEvent) => { event.preventDefault(); setBusy(true); setError(""); setSuccess(""); try { await api.post(`/api/routes/${encodeURIComponent(routeId)}/boarding-points`, { name: point, latitude: Number(lat), longitude: Number(lng), stop_order: Number(order) }); setSuccess("Boarding point added."); setPoint(""); setLat(""); setLng(""); setOrder(""); } catch (issue) { setError(messageOf(issue)); } finally { setBusy(false); } };
+  return <><Title eyebrow="ROUTE MANAGEMENT" title="Routes & stops" description="Create routes and add ordered boarding points using saved coordinates." /><div className="content-grid form-grid"><Panel title="Create route"><form className="form-grid-inner" onSubmit={create}><FormField label="Route name"><input required value={name} onChange={(event) => setName(event.target.value)} /></FormField><FormField label="Description"><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Optional" /></FormField><button className="button primary-button" disabled={busy}><Plus size={16} />Create route</button></form></Panel><Panel title="Add boarding point"><form className="form-grid-inner" onSubmit={addPoint}><FormField label="Route"><select required value={routeId} onChange={(event) => setRouteId(event.target.value)}><option value="">Choose a route</option>{routes.data?.map((route) => <option key={route.id} value={route.id}>{route.name}</option>)}</select></FormField><FormField label="Stop name"><input required value={point} onChange={(event) => setPoint(event.target.value)} /></FormField><div className="field-row"><FormField label="Latitude"><input required type="number" step="any" value={lat} onChange={(event) => setLat(event.target.value)} /></FormField><FormField label="Longitude"><input required type="number" step="any" value={lng} onChange={(event) => setLng(event.target.value)} /></FormField><FormField label="Stop order"><input required type="number" min="1" value={order} onChange={(event) => setOrder(event.target.value)} /></FormField></div><button className="button secondary-button" disabled={busy}>Add boarding point</button></form></Panel></div><Feedback error={error} success={success} />
+    <Panel title="Routes" description="Expand a route to inspect its saved boarding points.">{routes.loading && !routes.data ? <Loading /> : routes.error ? <Failed error={routes.error} retry={routes.reload} /> : routes.data?.length ? <div className="route-list">{routes.data.map((route) => <RouteRow key={route.id} route={route} />)}</div> : <Empty title="No routes found" detail="Create a route to see it listed here." />}</Panel></>;
+}
+function RouteRow({ route }: { route: RouteRecord }) {
+  const [open, setOpen] = useState(false); const points = useResource<{ boarding_points?: { id: number; name: string; latitude: number; longitude: number; stop_order: number }[] }>(open ? `/api/routes/${encodeURIComponent(route.id)}` : null);
+  return <div className="route-row"><button className="route-toggle" onClick={() => setOpen((value) => !value)}><span className="route-badge"><RouteIcon size={18} /></span><span className="route-name"><b>{route.name}</b><small>{route.description || `Route ${shortId(route.id)}`}</small></span><Pill value={route.is_active ? "ACTIVE" : "INACTIVE"} /><ChevronRight className={open ? "rotate-icon" : ""} size={17} /></button>{open && <div className="route-stops">{points.loading ? <Loading /> : points.error ? <Failed error={points.error} /> : points.data?.boarding_points?.length ? points.data.boarding_points.map((stop) => <div className="stop-row" key={stop.id}><i>{stop.stop_order}</i><b>{stop.name}</b><small>{stop.latitude}, {stop.longitude}</small></div>) : <p className="muted-text">No boarding points returned for this route.</p>}</div>}</div>;
+}
+
+function AdminStudents() {
+  const students = useResource<{ students: StudentRecord[] }>("/api/students/", 30000); const buses = useResource<BusRecord[]>("/api/buses/"); const [search, setSearch] = useState(""); const [showForm, setShowForm] = useState(false); const [name, setName] = useState(""); const [usn, setUsn] = useState(""); const [phone, setPhone] = useState(""); const [userId, setUserId] = useState(""); const [error, setError] = useState(""); const [success, setSuccess] = useState(""); const [busy, setBusy] = useState(false);
+  const list = students.data?.students || []; const filtered = list.filter((person) => `${person.name} ${person.usn} ${person.phone || ""}`.toLowerCase().includes(search.toLowerCase()));
+  const create = async (event: React.FormEvent) => { event.preventDefault(); setBusy(true); setError(""); setSuccess(""); try { await api.post("/api/students/", { name, usn, phone: phone || null, user_id: userId || null }); setSuccess("Student profile linked."); setName(""); setUsn(""); setPhone(""); setUserId(""); setShowForm(false); students.reload(); } catch (issue) { setError(messageOf(issue)); } finally { setBusy(false); } };
+  return <><Title eyebrow="STUDENT DIRECTORY" title="Students" description="Review student records and update bus assignments." action={<button className="button primary-button" onClick={() => setShowForm((value) => !value)}><Plus size={16} />Add student</button>} />{showForm && <Panel title="Create student profile"><form className="form-grid-inner three-fields" onSubmit={create}><FormField label="Full name"><input required value={name} onChange={(event) => setName(event.target.value)} /></FormField><FormField label="Student ID / USN"><input required value={usn} onChange={(event) => setUsn(event.target.value)} /></FormField><FormField label="Phone"><input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} /></FormField><FormField label="Registered account user ID (optional)"><input value={userId} onChange={(event) => setUserId(event.target.value)} placeholder="Paste the ID shown after registration" /></FormField><button className="button primary-button" disabled={busy}>Save student</button></form></Panel>}<Feedback error={error} success={success} />
+    <Panel title="Student register" description={`${list.length} records returned by the backend`} action={<div className="search-field"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search students" /></div>}>{students.loading && !students.data ? <Loading /> : students.error ? <Failed error={students.error} retry={students.reload} /> : filtered.length ? <Table headers={["STUDENT", "USN", "PHONE", "BUS ASSIGNMENT", "STATUS"]}>{filtered.map((student) => <StudentRow key={student.id} student={student} buses={buses.data || []} reload={students.reload} />)}</Table> : <Empty title={search ? "No matching students" : "No students found"} detail={search ? "Try a different name, phone or ID." : "Student records will appear here when available."} />}</Panel></>;
+}
+function StudentRow({ student, buses, reload }: { student: StudentRecord; buses: BusRecord[]; reload: () => void }) {
+  const [busId, setBus] = useState(student.bus_id || ""); const [pointId, setPoint] = useState(student.boarding_point_id?.toString() || ""); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
+  const save = async () => { setBusy(true); setError(""); try { await api.patch(`/api/students/${student.id}/assign`, { bus_id: busId || null, boarding_point_id: pointId ? Number(pointId) : null }); reload(); } catch (issue) { setError(messageOf(issue)); } finally { setBusy(false); } };
+  return <tr><td><b>{student.name}</b>{error && <small className="inline-error">{error}</small>}</td><td className="mono">{student.usn}</td><td>{student.phone || "Not provided"}</td><td><div className="assignment-control"><select aria-label={`Bus for ${student.name}`} value={busId} onChange={(event) => setBus(event.target.value)}><option value="">Unassigned</option>{buses.map((bus) => <option key={bus.id} value={bus.id}>{bus.bus_number}</option>)}</select><input aria-label={`Boarding point ID for ${student.name}`} type="number" min="1" placeholder="Stop ID" value={pointId} onChange={(event) => setPoint(event.target.value)} /><button className="icon-button" aria-label="Save assignment" title="Save assignment" disabled={busy} onClick={() => void save()}>{busy ? <i className="spinner small-spinner" /> : <Check size={15} />}</button></div></td><td><Pill value={student.is_active ? "ACTIVE" : "INACTIVE"} /></td></tr>;
+}
+
+function AdminTrips() {
+  const trips = useResource<Trip[]>("/api/admin/trips/active", 20000); const [selected, setSelected] = useState("");
+  useEffect(() => { if (trips.data && !trips.data.some((trip) => trip.trip_id === selected)) setSelected(trips.data[0]?.trip_id || ""); }, [trips.data, selected]);
+  return <><Title eyebrow="LIVE OPERATIONS" title="Trip tracking" description="Track active trips using the latest GPS and ETA responses." /><Panel title="Active trips" description="Only active trips are listed by the available admin endpoint." action={trips.data?.length ? <FormField label="Selected trip"><select className="compact-select" value={selected} onChange={(event) => setSelected(event.target.value)}>{trips.data.map((trip) => <option key={trip.trip_id} value={trip.trip_id}>{shortId(trip.trip_id)} · Bus {shortId(trip.bus_id)}</option>)}</select></FormField> : undefined}>{trips.loading && !trips.data ? <Loading /> : trips.error ? <Failed error={trips.error} retry={trips.reload} /> : selected ? <LiveTrip tripId={selected} /> : <Empty title="No active trips" detail="There is no current trip to track." />}</Panel><div className="notice-line"><Clock3 size={16} />Trip history is not exposed by the current backend; completed trips are unavailable.</div></>;
+}
+function LiveTrip({ tripId, boardingPointId }: { tripId: string; boardingPointId?: number }) {
+  const live = useResource<Live>(`/api/trips/${encodeURIComponent(tripId)}/live`, 15000); const eta = useResource<Eta>(`/api/eta/${encodeURIComponent(tripId)}${boardingPointId ? `?boarding_point_id=${boardingPointId}` : ""}`, 20000);
+  const sourceLive = live.data ?? getDemoLive(tripId);
+  const sourceEta = eta.data ?? getDemoEta(tripId, boardingPointId);
+  const location = sourceLive.location; const lat = location?.latitude; const lng = location?.longitude; const point = !!location?.available && Number.isFinite(lat) && Number.isFinite(lng); const age = location?.recorded_at ? (Date.now() - new Date(location.recorded_at).getTime()) / 1000 : null; const stale = age !== null && age > 180;
+  return <><div className="tracking-stats"><div><small>Bus</small><b>{sourceLive.bus?.bus_number || "Not provided"}</b></div><div><small>Trip state</small><b><Pill value={sourceLive.status} /></b></div><div><small>Arrival estimate</small><b>{sourceEta.eta?.minutes != null ? `${sourceEta.eta.minutes} min` : "Unavailable"}</b></div><div><small>GPS updated</small><b>{dateValue(location?.recorded_at)}</b></div></div>{live.error && <Failed error={live.error} retry={live.reload} />}{eta.error && <div className="inline-notice"><Clock3 size={15} />ETA unavailable: {eta.error}</div>}
+    {point ? <div className="map-wrap"><MapContainer center={[lat as number, lng as number]} zoom={14} scrollWheelZoom className="live-map"><TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" /><MapCenter lat={lat as number} lng={lng as number} /><CircleMarker center={[lat as number, lng as number]} radius={9} pathOptions={{ color: "#1174cc", fillColor: "#1682dc", fillOpacity: 0.95 }}><Popup>Bus {sourceLive.bus?.bus_number || "location"}<br />{location?.source || "GPS source unavailable"}</Popup></CircleMarker></MapContainer></div> : <div className="map-unavailable"><MapPin size={23} /><b>{live.loading ? "Waiting for location" : "Load demo location"}</b><span>{live.loading ? "Checking for a recorded GPS point." : "Showing a live campus demo route for SMVITM, Bantakal, Udupi."}</span></div>}
+    <div className={`gps-caption ${stale ? "stale" : ""}`}><i className={stale ? "stale-dot" : ""} />{!point ? "Demo GPS fix" : stale ? "GPS data is stale" : "Latest GPS fix"}{location?.source ? ` · ${location.source}` : ""}{age !== null && point ? ` · ${Math.max(0, Math.floor(age / 60))} min ago` : ""}<span><RefreshCw size={13} />Auto refresh 15s</span></div>{sourceEta.eta && <div className="eta-summary"><Navigation size={17} /><span><b>{sourceEta.eta.status === "ARRIVED" ? "At the stop" : sourceEta.eta.minutes != null ? `${sourceEta.eta.minutes} minutes to ${sourceEta.eta.boarding_point || "boarding point"}` : "ETA not provided"}</b><small>{sourceEta.eta.distance_km != null ? `${sourceEta.eta.distance_km} km · ` : ""}{sourceEta.eta.confidence ? `${sourceEta.eta.confidence.toLowerCase()} confidence` : "Estimate returned by backend"}</small></span></div>}<EtaTrendChart data={demoEtaTrend} /></>;
+}
+function MapCenter({ lat, lng }: { lat: number; lng: number }) { const map = useMap(); useEffect(() => { map.setView([lat, lng], map.getZoom()); }, [lat, lng, map]); return null; }
+
+function AdminAttendance() {
+  const records = useResource<Attendance[]>("/api/admin/attendance", 30000); const students = useResource<{ students: StudentRecord[] }>("/api/students/"); const [search, setSearch] = useState(""); const people = students.data?.students || [];
+  const visible = (records.data || []).filter((record) => `${personName(people, record.student_id)} ${record.student_id} ${record.trip_id} ${record.status}`.toLowerCase().includes(search.toLowerCase()));
+  return <><Title eyebrow="PRESENCE RECORDS" title="Attendance" description="Attendance states are supplied by backend trip records; BLE presence is never inferred here." /><Panel title="Attendance records" description="The admin endpoint does not include timestamps or names; names are matched from student profiles." action={<div className="search-field"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search records" /></div>}>{records.loading && !records.data ? <Loading /> : records.error ? <Failed error={records.error} retry={records.reload} /> : visible.length ? <Table headers={["STUDENT", "STUDENT ID", "TRIP", "STATUS", "TIMESTAMP"]}>{visible.map((record, index) => <tr key={record.id || `${record.trip_id}-${index}`}><td>{personName(people, record.student_id)}</td><td className="mono">{record.student_id}</td><td className="mono">{shortId(record.trip_id)}</td><td><Pill value={record.status} /></td><td className="muted-text">Not provided by endpoint</td></tr>)}</Table> : <Empty title="No attendance records" detail="No backend attendance records matched this view." />}</Panel></>;
+}
+function AdminSos() {
+  const events = useResource<Sos[]>("/api/admin/sos", 20000); const [error, setError] = useState(""); const [busy, setBusy] = useState<number | null>(null);
+  const resolve = async (id: number) => { setBusy(id); setError(""); try { await api.put(`/api/sos/${id}/resolve`); events.reload(); } catch (issue) { setError(messageOf(issue)); } finally { setBusy(null); } };
+  return <><Title eyebrow="SAFETY & RESPONSE" title="SOS alerts" description="Review emergency events and resolve them when handled." /><Feedback error={error} /><Panel title="Emergency events" description="Events are sorted by creation time by the backend.">{events.loading && !events.data ? <Loading /> : events.error ? <Failed error={events.error} retry={events.reload} /> : events.data?.length ? <Table headers={["EVENT", "BUS", "TRIP", "DRIVER", "CREATED", "STATUS", "ACTION"]}>{events.data.map((event) => <tr key={event.id}><td><b>{event.message || "Emergency SOS"}</b></td><td className="mono">{shortId(event.bus_id)}</td><td className="mono">{shortId(event.trip_id)}</td><td className="mono">{shortId(event.driver_id)}</td><td>{dateValue(event.created_at)}</td><td><Pill value={event.status} /></td><td>{event.status !== "RESOLVED" && <button className="button resolve-button" disabled={busy === event.id} onClick={() => void resolve(event.id)}>{busy === event.id ? "Resolving…" : "Resolve"}</button>}</td></tr>)}</Table> : <Empty title="No SOS events" detail="No emergency events were returned by the backend." />}</Panel></>;
+}
+/*
+    <Panel title="Student register" description={`${list.length} records returned by the backend`} action={<div className="search-field"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search students" /></div>}>{students.loading && !students.data ? <Loading /> : students.error ? <Failed error={students.error} retry={students.reload} /> : filtered.length ? <Table headers={["STUDENT", "USN", "PHONE", "BUS ASSIGNMENT", "STATUS", "ACTION"]}>{filtered.map((student) => <StudentRow key={student.id} student={student} buses={buses.data || []} reload={students.reload} onDelete={remove} disabled={busy} />)}</Table> : <Empty title={search ? "No matching students" : "No students found"} detail={search ? "Try a different name, phone or ID." : "Student records will appear here when available."} />}</Panel></>;
+    <Panel title="Student register" description={`${list.length} records returned by the backend`} action={<div className="search-field"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search students" /></div>}>{students.loading && !students.data ? <Loading /> : students.error ? <Failed error={students.error} retry={students.reload} /> : filtered.length ? <Table headers={["STUDENT", "USN", "PHONE", "BUS ASSIGNMENT", "STATUS", "ACTION"]}>{filtered.map((student) => <StudentRow key={student.id} student={student} buses={buses.data || []} reload={students.reload} onDelete={remove} disabled={busy} />)}</Table> : <Empty title={search ? "No matching students" : "No students found"} detail={search ? "Try a different name, phone or ID." : "Student records will appear here when available."} />}</Panel></>;
+function StudentRow({ student, buses, reload, onDelete, disabled }: { student: StudentRecord; buses: BusRecord[]; reload: () => void; onDelete: (student: StudentRecord) => void; disabled: boolean }) {
+function StudentRow({ student, buses, reload, onDelete, disabled }: { student: StudentRecord; buses: BusRecord[]; reload: () => void; onDelete: (student: StudentRecord) => void; disabled: boolean }) {
+  return <tr><td><b>{student.name}</b>{error && <small className="inline-error">{error}</small>}</td><td className="mono">{student.usn}</td><td>{student.phone || "Not provided"}</td><td><div className="assignment-control"><select aria-label={`Bus for ${student.name}`} value={busId} onChange={(event) => setBus(event.target.value)}><option value="">Unassigned</option>{buses.map((bus) => <option key={bus.id} value={bus.id}>{bus.bus_number}</option>)}</select><input aria-label={`Boarding point ID for ${student.name}`} type="number" min="1" placeholder="Stop ID" value={pointId} onChange={(event) => setPoint(event.target.value)} /><button className="icon-button" aria-label="Save assignment" title="Save assignment" disabled={busy} onClick={() => void save()}>{busy ? <i className="spinner small-spinner" /> : <Check size={15} />}</button></div></td><td><Pill value={student.is_active ? "ACTIVE" : "INACTIVE"} /></td><td><button className="icon-button danger-button" aria-label={`Delete ${student.name}`} title="Delete student" disabled={disabled || busy} onClick={() => onDelete(student)}><Trash2 size={15} /></button></td></tr>;
+  return <tr><td><b>{student.name}</b>{error && <small className="inline-error">{error}</small>}</td><td className="mono">{student.usn}</td><td>{student.phone || "Not provided"}</td><td><div className="assignment-control"><select aria-label={`Bus for ${student.name}`} value={busId} onChange={(event) => setBus(event.target.value)}><option value="">Unassigned</option>{buses.map((bus) => <option key={bus.id} value={bus.id}>{bus.bus_number}</option>)}</select><input aria-label={`Boarding point ID for ${student.name}`} type="number" min="1" placeholder="Stop ID" value={pointId} onChange={(event) => setPoint(event.target.value)} /><button className="icon-button" aria-label="Save assignment" title="Save assignment" disabled={busy} onClick={() => void save()}>{busy ? <i className="spinner small-spinner" /> : <Check size={15} />}</button></div></td><td><Pill value={student.is_active ? "ACTIVE" : "INACTIVE"} /></td><td><button className="icon-button danger-button" aria-label={`Delete ${student.name}`} title="Delete student" disabled={disabled || busy} onClick={() => onDelete(student)}><Trash2 size={15} /></button></td></tr>;
+  const name = status.data?.student?.name || student?.name || "Linked student";
+  const selector = linked.data && linked.data.length > 1 ? <FormField label="Student"><select className="compact-select" value={student?.student_id || ""} onChange={(event) => setSelectedId(Number(event.target.value))}>{linked.data.map((item) => <option key={item.student_id} value={item.student_id}>{item.name} · {item.usn}</option>)}</select></FormField> : undefined;
+  const status = resource.data; let point = status?.student?.boarding_point; if (point && typeof point === "object" && "name" in point) point = (point as { name: unknown }).name; return <div className="summary-cards"><div><span>Presence</span><b><Pill value={status?.presence || "UNKNOWN"} /></b></div><div><span>Route</span><b>{status?.trip?.route || "Not available"}</b></div><div><span>Bus</span><b>{status?.bus?.bus_number || "Not assigned"}</b></div><div><span>Boarding point</span><b>{typeof point === "string" || typeof point === "number" ? point : "Not provided"}</b></div></div>;
+  const trips = useResource<Trip[]>("/api/admin/trips/active", 20000); const [selected, setSelected] = useState(""); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
+  const remove = async () => { if (!selected || !window.confirm("Delete this trip record and its tracking history?")) return; setBusy(true); setError(""); try { await api.delete(`/api/trips/${encodeURIComponent(selected)}`); setSelected(""); trips.reload(); } catch (issue) { setError(messageOf(issue)); } finally { setBusy(false); } };
+  return <><Title eyebrow="LIVE OPERATIONS" title="Trip tracking" description="Track active trips using the latest GPS and ETA responses." /><Feedback error={error} /><Panel title="Active trips" description="Only active trips are listed by the available admin endpoint." action={trips.data?.length ? <div className="field-row"><FormField label="Selected trip"><select className="compact-select" value={selected} onChange={(event) => setSelected(event.target.value)}>{trips.data.map((trip) => <option key={trip.trip_id} value={trip.trip_id}>{shortId(trip.trip_id)} · Bus {shortId(trip.bus_id)}</option>)}</FormField><button className="icon-button danger-button" aria-label="Delete selected trip" title="Delete selected trip" disabled={busy} onClick={() => void remove()}><Trash2 size={16} /></button></div> : undefined}>{trips.loading && !trips.data ? <Loading /> : trips.error ? <Failed error={trips.error} retry={trips.reload} /> : selected ? <LiveTrip tripId={selected} /> : <Empty title="No active trips" detail="There is no current trip to track." />}</Panel><div className="notice-line"><Clock3 size={16} />Trip history is not exposed by the current backend; completed trips are unavailable.</div></>;
+  const remove = async () => { if (!selected || !window.confirm("Delete this trip record and its tracking history?")) return; setBusy(true); setError(""); try { await api.delete(`/api/trips/${encodeURIComponent(selected)}`); setSelected(""); trips.reload(); } catch (issue) { setError(messageOf(issue)); } finally { setBusy(false); } };
+  return <><Title eyebrow="LIVE OPERATIONS" title="Trip tracking" description="Track active trips using the latest GPS and ETA responses." /><Feedback error={error} /><Panel title="Active trips" description="Only active trips are listed by the available admin endpoint." action={trips.data?.length ? <div className="field-row"><FormField label="Selected trip"><select className="compact-select" value={selected} onChange={(event) => setSelected(event.target.value)}>{trips.data.map((trip) => <option key={trip.trip_id} value={trip.trip_id}>{shortId(trip.trip_id)} · Bus {shortId(trip.bus_id)}</option>)}</FormField><button className="icon-button danger-button" aria-label="Delete selected trip" title="Delete selected trip" disabled={busy} onClick={() => void remove()}><Trash2 size={16} /></button></div> : undefined}>{trips.loading && !trips.data ? <Loading /> : trips.error ? <Failed error={trips.error} retry={trips.reload} /> : selected ? <LiveTrip tripId={selected} /> : <Empty title="No active trips" detail="There is no current trip to track." />}</Panel><div className="notice-line"><Clock3 size={16} />Trip history is not exposed by the current backend; completed trips are unavailable.</div></>;
+function LinkedState({ linked }: { linked: Resource<{ student_id: number; name: string; usn: string }[]> }) { if (linked.loading && !linked.data) return <Loading text="Loading linked students" />; if (linked.error) return <Failed error={linked.error} retry={linked.reload} />; if (!linked.data?.length) return <Empty title="No linked students" detail="Your account does not currently have a student link. Ask your institution to link the student profile." />; if (linked.data.length > 1) return <div className="inline-notice"><Users size={16} />{linked.data.length} linked students found; this view displays the first profile.</div>; return null; }
+function ParentSummary({ resource }: { resource: Resource<ParentStatus> }) { if (resource.loading && !resource.data) return <Loading text="Loading commute status" />; if (resource.error) return <Failed error={resource.error} retry={resource.reload} />; const status = resource.data; let point = status?.student?.boarding_point; if (point && typeof point === "object" && "name" in point) point = (point as { name: unknown }).name; return <div className="summary-cards"><div><span>Presence</span><b><Pill value={status?.presence || "UNKNOWN"} /></b></div><div><span>Route</span><b>{status?.trip?.route || "Not available"}</b></div><div><span>Bus</span><b>{status?.bus?.bus_number || "Not assigned"}</b></div><div><span>Boarding point</span><b>{typeof point === "string" || typeof point === "number" ? point : "Not provided"}</b></div></div>; }
+
+function StudentPage({ mode, user }: { mode: "dashboard" | "track" | "attendance"; user: User | null }) {
+  const students = useResource<{ students: StudentRecord[] }>("/api/students/", 30000); const profile = students.data?.students.find((student) => String(student.user_id) === String(user?.id)); const assignedBus = useResource<BusRecord>(profile?.bus_id ? `/api/buses/${encodeURIComponent(profile.bus_id)}` : null); const attendance = useResource<{ attendance?: Attendance[] }>(profile ? `/api/students/${profile.id}/attendance` : null, mode === "attendance" ? 20000 : 0); const latestTrip = latestAttendance(attendance.data?.attendance)?.trip_id;
+  if (mode === "dashboard") return <><Title eyebrow="STUDENT PORTAL" title={`Hello${user?.name ? `, ${user.name.split(" ")[0]}` : ""}`} description="Your assigned transport, attendance and commute information." />{students.loading && !students.data ? <Loading text="Loading student profile" /> : students.error ? <Failed error={students.error} retry={students.reload} /> : !profile ? <Empty title="Student profile unavailable" detail={`Ask an administrator to create a student profile linked to account ID ${user?.id || "unavailable"}.`} /> : <><div className="stat-grid"><Stat label="Student ID" value={profile.usn} detail={profile.name} icon={GraduationCap} /><Stat label="Assigned bus" value={assignedBus.data?.bus_number || (profile.bus_id ? shortId(profile.bus_id) : "Not assigned")} detail={assignedBus.error ? "Bus details unavailable" : profile.bus_id ? "Assigned bus" : "No bus assigned"} icon={Bus} tone="green" /><Stat label="Assigned route" value="Unavailable" detail="Not provided by student profile API" icon={RouteIcon} tone="orange" /><Stat label="Boarding point" value={profile.boarding_point_id ?? "Not assigned"} detail="Boarding point ID" icon={MapPin} tone="orange" /></div><Panel title="Latest attendance" description="Status read from the student attendance endpoint." action={<Link className="text-button" to="/student/attendance">View attendance <ChevronRight size={15} /></Link>}><AttendancePreview resource={attendance} name={profile.name} />{latestTrip && <div className="mini-trip"><span className="list-icon bus-icon"><Navigation size={17} /></span><span><b>Trip {shortId(latestTrip)}</b><small>Latest attendance-linked trip</small></span><Link className="text-button" to="/student/track">Track bus <ChevronRight size={15} /></Link></div>}</Panel></> }</>;
+  if (mode === "track") return <><Title eyebrow="LIVE COMMUTE" title="Track bus" description="Map and ETA use the latest available trip and GPS response." />{students.loading && !students.data ? <Loading /> : students.error ? <Failed error={students.error} retry={students.reload} /> : !profile ? <Empty title="Student profile unavailable" detail="No student profile is connected to this signed-in account." /> : attendance.loading && !attendance.data ? <Loading /> : attendance.error ? <Failed error={attendance.error} retry={attendance.reload} /> : latestTrip ? <LiveTrip tripId={latestTrip} boardingPointId={profile.boarding_point_id} /> : <Empty title="No trip available to track" detail="The attendance API has not returned a trip ID for this student." />}</>;
+  return <><Title eyebrow="PRESENCE RECORDS" title="My attendance" description="Your status is recorded by the trip attendance service." />{students.loading && !students.data ? <Loading /> : students.error ? <Failed error={students.error} retry={students.reload} /> : !profile ? <Empty title="Student profile unavailable" detail="No student profile is connected to this signed-in account." /> : <AttendancePanel resource={attendance} name={profile.name} />}</>;
+}
+function AttendancePanel({ resource, name }: { resource: Resource<{ attendance?: Attendance[] }>; name: string }) { const rows = resource.data?.attendance || []; return <Panel title={name} description="Present, left and unknown states come directly from the API.">{resource.loading && !resource.data ? <Loading /> : resource.error ? <Failed error={resource.error} retry={resource.reload} /> : rows.length ? <Table headers={["STUDENT", "TRIP", "STATUS", "FIRST SEEN", "LAST SEEN", "LEFT AT"]}>{rows.map((record, index) => <tr key={record.id || `${record.trip_id}-${index}`}><td>{name}</td><td className="mono">{shortId(record.trip_id)}</td><td><Pill value={record.status} /></td><td>{dateValue(record.first_seen)}</td><td>{dateValue(record.last_seen)}</td><td>{dateValue(record.left_at)}</td></tr>)}</Table> : <Empty title="No attendance records" detail="Attendance has not been returned for this student." />}</Panel>; }
+function AttendancePreview({ resource, name }: { resource: Resource<{ attendance?: Attendance[] }>; name: string }) { if (resource.loading && !resource.data) return <Loading />; if (resource.error) return <Failed error={resource.error} retry={resource.reload} />; const item = latestAttendance(resource.data?.attendance); return item ? <div className="attendance-preview"><Pill value={item.status} /><span><b>Trip {shortId(item.trip_id)}</b><small>{name} · {dateValue(item.last_seen || item.first_seen)}</small></span></div> : <Empty title="No attendance data" detail="No status is available yet." />; }
+
+function Notifications({ user }: { user: User | null }) {
+  const supportsBackendIdentity = /^\d+$/.test(String(user?.id ?? "")); const notices = useResource<Notice[]>(supportsBackendIdentity ? "/api/notifications" : null, 30000); const [error, setError] = useState(""); const [busy, setBusy] = useState<number | null>(null);
+  const mark = async (id: number) => { setBusy(id); setError(""); try { await api.put(`/api/notifications/${id}/read`); notices.reload(); } catch (issue) { setError(messageOf(issue)); } finally { setBusy(null); } };
+  return <><Title eyebrow="MESSAGE CENTER" title="Notifications" description="Messages delivered to your signed-in account." /><Feedback error={error} /><Panel title="Recent notifications" description="Notifications are ordered by creation time by the backend." action={<button className="icon-button" aria-label="Refresh notifications" title="Refresh notifications" onClick={notices.reload}><RefreshCw size={16} /></button>}>{!supportsBackendIdentity ? <Empty title="Notifications unavailable" detail="The backend notification route only accepts numeric user IDs, but this account has a UUID. The server route must be updated to support UUID identities." /> : notices.loading && !notices.data ? <Loading /> : notices.error ? <Failed error={notices.error} retry={notices.reload} /> : notices.data?.length ? <div className="notification-list">{notices.data.map((notice) => <article className={`notification-item ${notice.is_read ? "read" : ""}`} key={notice.id}><span className="list-icon notice-icon"><Bell size={17} /></span><div className="notification-copy"><div><b>{notice.title}</b><Pill value={notice.type} /></div><p>{notice.message}</p><small>{dateValue(notice.created_at)}{notice.trip_id ? ` · Trip ${shortId(notice.trip_id)}` : ""}</small></div>{!notice.is_read && <button className="text-button" disabled={busy === notice.id} onClick={() => void mark(notice.id)}>{busy === notice.id ? "Saving…" : "Mark read"}</button>}</article>)}</div> : <Empty title="You're all caught up" detail="No notifications have been returned for this account." />}</Panel></>;
+}
+*/
+function ParentPage({ mode, user }: { mode: "dashboard" | "track" | "attendance"; user: User | null }) {
+  const linked = useResource<{ student_id: number; name: string; usn: string }[]>("/api/parent/students", 30000); const student = linked.data?.[0]; const status = useResource<ParentStatus>(student ? `/api/parent/student/${student.student_id}/status` : null, 15000); const attendance = useResource<{ attendance?: Attendance[] }>(student ? `/api/students/${student.student_id}/attendance` : null, mode === "attendance" ? 20000 : 0); const profile = useResource<StudentRecord>(student ? `/api/students/${student.student_id}` : null); const name = status.data?.student?.name || student?.name || "Linked student";
+  if (mode === "dashboard") return <><Title eyebrow="PARENT PORTAL" title={`Welcome${user?.name ? `, ${user.name.split(" ")[0]}` : ""}`} description="A clear view of your linked student's commute and attendance." /><LinkedState linked={linked} />{student && <Panel title="Commute status"><ParentSummary resource={status} /></Panel>}</>;
+  if (mode === "track") return <><Title eyebrow="LIVE COMMUTE" title="Track bus" description="Location and arrival estimates refresh from available backend data." /><LinkedState linked={linked} />{student && status.data?.trip?.trip_id ? <LiveTrip tripId={status.data.trip.trip_id} boardingPointId={profile.data?.boarding_point_id} /> : <Empty title="No trip available to track" detail="No current trip is linked to this student." />}</>;
+  return <><Title eyebrow="PRESENCE RECORDS" title="Student attendance" description="Showing states returned for your linked student." /><LinkedState linked={linked} />{student && <AttendancePanel resource={attendance} name={name} />}</>;
+}
+function LinkedState({ linked }: { linked: Resource<{ student_id: number; name: string; usn: string }[]> }) { if (linked.loading && !linked.data) return <Loading text="Loading linked students" />; if (linked.error) return <Failed error={linked.error} retry={linked.reload} />; if (!linked.data?.length) return <Empty title="No linked students" detail="Ask the administrator to link a student profile to this account." />; return null; }
+function ParentSummary({ resource }: { resource: Resource<ParentStatus> }) { if (resource.loading && !resource.data) return <Loading text="Loading commute status" />; if (resource.error) return <Failed error={resource.error} retry={resource.reload} />; return <div className="summary-cards"><div><span>Presence</span><b><Pill value={resource.data?.presence || "UNKNOWN"} /></b></div><div><span>Route</span><b>{resource.data?.trip?.route || "Not available"}</b></div><div><span>Bus</span><b>{resource.data?.bus?.bus_number || "Not assigned"}</b></div></div>; }
+function StudentPage({ mode, user }: { mode: "dashboard" | "track" | "attendance"; user: User | null }) { const students = useResource<{ students: StudentRecord[] }>("/api/students/", 30000); const profile = students.data?.students.find((student) => String(student.user_id) === String(user?.id)); const attendance = useResource<{ attendance?: Attendance[] }>(profile ? `/api/students/${profile.id}/attendance` : null, mode === "attendance" ? 20000 : 0); const latestTrip = latestAttendance(attendance.data?.attendance)?.trip_id; if (mode === "track") return <><Title eyebrow="LIVE COMMUTE" title="Track bus" description="Map and ETA use the latest available trip and GPS response." />{latestTrip ? <LiveTrip tripId={latestTrip} boardingPointId={profile?.boarding_point_id} /> : <Empty title="No trip available to track" detail="No attendance-linked trip is available." />}</>; if (mode === "attendance") return <><Title eyebrow="PRESENCE RECORDS" title="My attendance" description="Your status is recorded by the trip attendance service." />{profile && <AttendancePanel resource={attendance} name={profile.name} />}</>; return <><Title eyebrow="STUDENT PORTAL" title={`Hello${user?.name ? `, ${user.name.split(" ")[0]}` : ""}`} description="Your assigned transport and attendance information." />{students.loading && !students.data ? <Loading /> : profile ? <Panel title={profile.name}><p>{profile.usn}</p></Panel> : <Empty title="Student profile unavailable" detail="No student profile is connected to this account." />}</>; }
+function AttendancePanel({ resource, name }: { resource: Resource<{ attendance?: Attendance[] }>; name: string }) { const rows = resource.data?.attendance || []; return <Panel title={name} description="Present, left and unknown states come directly from the API.">{resource.loading && !resource.data ? <Loading /> : resource.error ? <Failed error={resource.error} retry={resource.reload} /> : rows.length ? <Table headers={["STUDENT", "TRIP", "STATUS", "FIRST SEEN", "LAST SEEN", "LEFT AT"]}>{rows.map((record, index) => <tr key={record.id || `${record.trip_id}-${index}`}><td>{name}</td><td className="mono">{shortId(record.trip_id)}</td><td><Pill value={record.status} /></td><td>{dateValue(record.first_seen)}</td><td>{dateValue(record.last_seen)}</td><td>{dateValue(record.left_at)}</td></tr>)}</Table> : <Empty title="No attendance records" detail="Attendance has not been returned for this student." />}</Panel>; }
+function AttendancePreview({ resource, name }: { resource: Resource<{ attendance?: Attendance[] }>; name: string }) { if (resource.loading && !resource.data) return <Loading />; if (resource.error) return <Failed error={resource.error} retry={resource.reload} />; const item = latestAttendance(resource.data?.attendance); return item ? <div className="attendance-preview"><Pill value={item.status} /><span><b>Trip {shortId(item.trip_id)}</b><small>{name} · {dateValue(item.last_seen || item.first_seen)}</small></span></div> : <Empty title="No attendance data" detail="No status is available yet." />; }
+function Notifications({ user: _user }: { user: User | null }) { const notices = useResource<Notice[]>("/api/notifications", 30000); const [error, setError] = useState(""); const [busy, setBusy] = useState<number | null>(null); const mark = async (id: number) => { setBusy(id); setError(""); try { await api.put(`/api/notifications/${id}/read`); notices.reload(); } catch (issue) { setError(messageOf(issue)); } finally { setBusy(null); } }; return <><Title eyebrow="MESSAGE CENTER" title="Notifications" description="Messages delivered to your signed-in account." /><Feedback error={error} /><Panel title="Recent notifications" action={<button className="icon-button" aria-label="Refresh notifications" title="Refresh notifications" onClick={notices.reload}><RefreshCw size={16} /></button>}>{notices.loading && !notices.data ? <Loading /> : notices.error ? <Failed error={notices.error} retry={notices.reload} /> : notices.data?.length ? <div className="notification-list">{notices.data.map((notice) => <article className={`notification-item ${notice.is_read ? "read" : ""}`} key={notice.id}><span className="list-icon notice-icon"><Bell size={17} /></span><div className="notification-copy"><b>{notice.title}</b><p>{notice.message}</p><small>{dateValue(notice.created_at)}</small></div>{!notice.is_read && <button className="text-button" disabled={busy === notice.id} onClick={() => void mark(notice.id)}>{busy === notice.id ? "Saving…" : "Mark read"}</button>}</article>)}</div> : <Empty title="You're all caught up" detail="No notifications have been returned for this account." />}</Panel></>; }

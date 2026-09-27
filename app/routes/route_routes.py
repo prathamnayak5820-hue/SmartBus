@@ -1,3 +1,4 @@
+
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt
 
@@ -9,6 +10,7 @@ from app.models.boarding_point import BoardingPoint
 route_bp = Blueprint("routes", __name__)
 
 
+# Create a new route
 @route_bp.post("/")
 @jwt_required()
 def create_route():
@@ -42,11 +44,13 @@ def create_route():
         "route": {
             "id": route.id,
             "name": route.name,
-            "description": route.description
+            "description": route.description,
+            "is_active": route.is_active
         }
     }), 201
 
 
+# Get all routes
 @route_bp.get("/")
 @jwt_required()
 def list_routes():
@@ -58,12 +62,14 @@ def list_routes():
         result.append({
             "id": route.id,
             "name": route.name,
-            "description": route.description
+            "description": route.description,
+            "is_active": route.is_active
         })
 
     return jsonify(result), 200
 
 
+# Get a single route with its boarding points
 @route_bp.get("/<route_id>")
 @jwt_required()
 def get_route(route_id):
@@ -84,6 +90,7 @@ def get_route(route_id):
         "id": route.id,
         "name": route.name,
         "description": route.description,
+        "is_active": route.is_active,
         "boarding_points": [
             {
                 "id": point.id,
@@ -98,6 +105,7 @@ def get_route(route_id):
     }), 200
 
 
+# Add a boarding point to a route
 @route_bp.post("/<route_id>/boarding-points")
 @jwt_required()
 def add_boarding_point(route_id):
@@ -130,7 +138,9 @@ def add_boarding_point(route_id):
         or stop_order is None
     ):
         return jsonify({
-            "error": "name, latitude, longitude and stop_order are required"
+            "error": (
+                "name, latitude, longitude and stop_order are required"
+            )
         }), 400
 
     point = BoardingPoint(

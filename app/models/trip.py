@@ -1,24 +1,35 @@
+
+import uuid
+
 from app.extensions import db
-from datetime import datetime
 
 
 class Trip(db.Model):
     __tablename__ = "trips"
 
-    id = db.Column(db.String(36), primary_key=True)
+    id = db.Column(
+        db.String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4())
+    )
 
     bus_id = db.Column(
-        db.Integer,
+        db.String(36),
         db.ForeignKey("buses.id"),
         nullable=False
     )
 
-    
     route_id = db.Column(
-    db.String(36),
-    db.ForeignKey("routes.id"),
-    nullable=False
-)
+        db.String(36),
+        db.ForeignKey("routes.id"),
+        nullable=False
+    )
+
+    driver_id = db.Column(
+        db.String(36),
+        db.ForeignKey("users.id"),
+        nullable=True
+    )
 
     status = db.Column(
         db.String(30),
@@ -30,3 +41,4 @@ class Trip(db.Model):
 
     bus = db.relationship("Bus")
     route = db.relationship("Route")
+    driver = db.relationship("User")

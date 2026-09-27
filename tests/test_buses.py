@@ -624,7 +624,6 @@ def test_list_students(client):
             "role": "ADMIN"
         }
     )
-
     assert register_response.status_code == 201
 
     login_response = client.post(
@@ -634,50 +633,17 @@ def test_list_students(client):
             "password": "admin123"
         }
     )
-
     assert login_response.status_code == 200
+
     token = login_response.get_json()["access_token"]
 
     response = client.get(
-        "/",
-        headers={
-            "Authorization": f"Bearer {token}"
-        }
+        "/api/students/",
+        headers={"Authorization": f"Bearer {token}"}
     )
 
     assert response.status_code == 200
-    assert isinstance(response.get_json(), list)
+    data = response.get_json()
 
-def test_list_students(client):
-    register_response = client.post(
-        "/api/auth/register",
-        json={
-            "name": "Student List Admin",
-            "phone": "9999999981",
-            "password": "admin123",
-            "role": "ADMIN"
-        }
-    )
-
-    assert register_response.status_code == 201
-
-    login_response = client.post(
-        "/api/auth/login",
-        json={
-            "phone": "9999999981",
-            "password": "admin123"
-        }
-    )
-
-    assert login_response.status_code == 200
-    token = login_response.get_json()["access_token"]
-
-    response = client.get(
-        "/",
-        headers={
-            "Authorization": f"Bearer {token}"
-        }
-    )
-
-    assert response.status_code == 200
-    assert isinstance(response.get_json(), list)
+    assert "students" in data
+    assert isinstance(data["students"], list)

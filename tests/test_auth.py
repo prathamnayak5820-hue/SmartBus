@@ -45,3 +45,40 @@ def test_register_login_and_me(client):
     assert me_data["name"] == "Pytest Student"
     assert me_data["phone"] == "9999999999"
     assert me_data["role"] == "STUDENT"
+
+
+def test_admin_register_preserves_parent_and_driver_roles(client):
+    register_response = client.post(
+        "/api/auth/register",
+        json={
+            "name": "Role Admin",
+            "phone": "9999999997",
+            "password": "admin123",
+            "role": "ADMIN",
+        },
+    )
+    assert register_response.status_code == 201
+
+    login_response = client.post(
+        "/api/auth/login",
+        json={
+            "phone": "9999999997",
+            "password": "admin123",
+        },
+    )
+    token = login_response.get_json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    for role, phone in [("PARENT", "9999999996"), ("DRIVER", "9999999995")]:
+        response = client.post(
+            "/api/auth/admin-register",
+            headers=headers,
+            json={
+                "name": f"Test {role}",
+                "phone": phone,
+                "password": "test1234",
+                "role": role,
+            },
+        )
+        assert response.status_code == 201
+        assert response.get_json()["role"] == role

@@ -1,3 +1,4 @@
+
 def test_create_route(client):
     # Register admin
     register_response = client.post(
@@ -22,7 +23,6 @@ def test_create_route(client):
     )
 
     assert login_response.status_code == 200
-
     token = login_response.get_json()["access_token"]
 
     # Create route
@@ -39,8 +39,10 @@ def test_create_route(client):
 
     assert response.status_code == 201
 
+    # Validate response
     data = response.get_json()
 
+    assert "route" in data
     assert data["route"]["name"] == "Test Route"
     assert data["route"]["description"] == "Pytest route"
     assert data["route"]["is_active"] is True

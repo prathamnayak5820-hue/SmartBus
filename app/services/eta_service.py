@@ -336,8 +336,8 @@ def get_historical_stop_arrivals(route_id):
         .filter(
             Trip.route_id == route_id,
             Trip.status == "COMPLETED",
-            Trip.start_time.isnot(None),
-            Trip.end_time.isnot(None)
+            Trip.started_at.isnot(None),
+            Trip.ended_at.isnot(None)
         )
         .all()
     )
@@ -400,8 +400,8 @@ def get_historical_segment_data(route_id):
         .filter(
             Trip.route_id == route_id,
             Trip.status == "COMPLETED",
-            Trip.start_time.isnot(None),
-            Trip.end_time.isnot(None)
+            Trip.started_at.isnot(None),
+            Trip.ended_at.isnot(None)
         )
         .all()
     )
@@ -559,8 +559,8 @@ def calculate_historical_elapsed_to_stop(
         .filter(
             Trip.route_id == route_id,
             Trip.status == "COMPLETED",
-            Trip.start_time.isnot(None),
-            Trip.end_time.isnot(None)
+            Trip.started_at.isnot(None),
+            Trip.ended_at.isnot(None)
         )
         .all()
     )
@@ -585,7 +585,7 @@ def calculate_historical_elapsed_to_stop(
             continue
 
         elapsed = (
-            arrival - old_trip.start_time
+            arrival - old_trip.started_at
         ).total_seconds() / 60.0
 
         if 0 < elapsed <= 180:
@@ -667,7 +667,7 @@ def calculate_current_delay(
     median elapsed time required to reach the current anchor.
     """
 
-    if not trip.start_time:
+    if not trip.started_at:
         return 0.0, 0
 
     historical_elapsed, samples = (
@@ -682,7 +682,7 @@ def calculate_current_delay(
 
     actual_elapsed = (
         datetime.utcnow()
-        - trip.start_time
+        - trip.started_at
     ).total_seconds() / 60.0
 
     delay = (

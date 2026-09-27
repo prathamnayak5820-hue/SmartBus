@@ -14,3 +14,16 @@ class BoardingPoint(db.Model):
     stop_order = db.Column(db.Integer)
 
     is_active = db.Column(db.Boolean, default=True)
+
+    geofence_radius_m = db.Column(
+        db.Float,
+        default=200
+    )
+
+    route_id = db.Column(
+        db.String(36),
+        db.ForeignKey("routes.id"),
+        nullable=True
+    )
+
+    route = db.relationship("Route")

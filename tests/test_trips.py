@@ -99,3 +99,92 @@ def test_create_trip(client):
     assert trip_data["route_id"] == route_id
     assert trip_data["driver_id"] == driver_id
     assert trip_data["status"] == "PLANNED"
+
+
+def test_delete_trip(client):
+    register_admin = client.post(
+        "/api/auth/register",
+        json={
+            "name": "Delete Trip Admin",
+            "phone": "9999999994",
+            "password": "admin123",
+            "role": "ADMIN"
+        }
+    )
+
+    assert register_admin.status_code == 201
+
+    login_admin = client.post(
+        "/api/auth/login",
+        json={
+            "phone": "9999999994",
+            "password": "admin123"
+        }
+    )
+
+    assert login_admin.status_code == 200
+    admin_token = login_admin.get_json()["access_token"]
+
+    bus_response = client.post(
+        "/api/buses/",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "bus_number": "DELETE-TRIP-BUS",
+            "capacity": 32
+        }
+    )
+    assert bus_response.status_code == 201
+    bus_id = bus_response.get_json()["bus"]["id"]
+
+    route_response = client.post(
+        "/api/routes/",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "name": "Delete Trip Route",
+            "description": "Route for delete-trip test"
+        }
+    )
+    assert route_response.status_code == 201
+    route_id = route_response.get_json()["route"]["id"]
+
+    register_driver = client.post(
+        "/api/auth/register",
+        json={
+            "name": "Delete Trip Driver",
+            "phone": "9999999993",
+            "password": "driver123",
+            "role": "DRIVER"
+        }
+    )
+    assert register_driver.status_code == 201
+
+    login_driver = client.post(
+        "/api/auth/login",
+        json={
+            "phone": "9999999993",
+            "password": "driver123"
+        }
+    )
+    assert login_driver.status_code == 200
+    driver_id = login_driver.get_json()["user"]["id"]
+
+    trip_response = client.post(
+        "/api/trips/",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "bus_id": bus_id,
+            "route_id": route_id,
+            "driver_id": driver_id
+        }
+    )
+
+    assert trip_response.status_code == 201
+    trip_id = trip_response.get_json()["trip"]["id"]
+
+    delete_response = client.delete(
+        f"/api/trips/{trip_id}",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+
+    assert delete_response.status_code == 200
+    assert delete_response.get_json()["message"] == "Trip deleted successfully"

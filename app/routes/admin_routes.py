@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
+from app.extensions import db
 from app.models.user import User
 from app.models.bus import Bus
 from app.models.trip import Trip
@@ -16,10 +17,7 @@ admin_bp = Blueprint(
 
 
 def check_admin():
-
-    user_id = int(get_jwt_identity())
-
-    user = User.query.get(user_id)
+    user = db.session.get(User, get_jwt_identity())
 
     if not user:
         return None
@@ -46,7 +44,7 @@ def buses():
             "id": bus.id,
             "bus_number": bus.bus_number,
             "capacity": bus.capacity,
-            "driver_name": bus.driver_name,
+            "driver_name": bus.driver.name if bus.driver else None,
             "is_active": bus.is_active
         }
         for bus in buses
@@ -70,7 +68,7 @@ def active_trips():
         {
             "trip_id": trip.id,
             "bus_id": trip.bus_id,
-            "route": trip.route_name,
+            "route": trip.route.name if trip.route else None,
             "status": trip.status
         }
         for trip in trips
@@ -146,8 +144,8 @@ def dashboard():
 
     total_students = Student.query.count()
 
-    active_sos = SOSEvent.query.filter_by(
-        status="ACTIVE"
+    active_sos = SOSEvent.query.filter(
+        SOSEvent.status != "RESOLVED"
     ).count()
 
     return jsonify({
